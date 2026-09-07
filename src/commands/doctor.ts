@@ -3660,7 +3660,7 @@ export async function buildChecks(
        SELECT slug, frontmatter, created_at, updated_at
          FROM sample
         WHERE effective_date_source = 'fallback'
-          AND (frontmatter ? 'event_date' OR frontmatter ? 'date' OR frontmatter ? 'published')`,
+          AND (frontmatter ? 'event_date' OR frontmatter ? 'date' OR frontmatter ? 'published' OR frontmatter ? 'created')`,
     );
     let fallbackWithFm = 0;
     for (const row of candidates) {
@@ -3682,7 +3682,7 @@ export async function buildChecks(
         updatedAt: new Date(row.updated_at),
         createdAt: new Date(row.created_at),
       });
-      if (recomputed.source === 'event_date' || recomputed.source === 'date' || recomputed.source === 'published') {
+      if (recomputed.source === 'event_date' || recomputed.source === 'date' || recomputed.source === 'published' || recomputed.source === 'created') {
         fallbackWithFm++;
       }
     }
