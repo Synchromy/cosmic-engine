@@ -36,7 +36,7 @@ export async function loadChronicleContext(
 ): Promise<ChronicleContext> {
   const days = typeof opts.days === 'number' && opts.days > 0 ? opts.days : 7;
   const since = daysAgoIso(days);
-  const scope = { sourceId: opts.sourceId, sourceIds: opts.sourceIds };
+  const scope = { sourceId: opts.sourceId, sourceIds: opts.sourceIds, excludePrivate: opts.excludePrivate === true };
 
   const recent_timeline = await engine.getSince(since, {
     ...scope, excludePrivate: opts.excludePrivate, limit: opts.limit ?? 50,

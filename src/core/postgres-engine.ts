@@ -88,7 +88,7 @@ import { drainBackgroundWorkBeforeDisconnect } from './background-work.ts';
 import { validateSlug, contentHash, isBlankBody, rowToPage, rowToStalePage, rowToChunk, rowToSearchResult, parseEmbedding, tryParseEmbedding, isUndefinedTableError, warnOncePerProcess } from './utils.ts';
 import { resolveBoostMap, resolveHardExcludes } from './search/source-boost.ts';
 import { buildSourceFactorCase, buildHardExcludeClause, buildVisibilityClause, buildBestPerPagePoolCte, buildOrFallbackWebsearchQuery, boundWebsearchQuery } from './search/sql-ranking.ts';
-import { privatePagesFilterFragment, privateLinkOriginFilterFragment, privateTimelineEventFilterFragment } from './search/private-visibility.ts';
+import { privatePagesFilterFragment, privateLinkOriginFilterFragment, privateTimelineEventFilterFragment, privateProvenanceFilterFragment } from './search/private-visibility.ts';
 import { unverifiedExtractionFragment } from './extraction-review.ts';
 import { DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_DIMENSIONS } from './ai/defaults.ts';
 import { DELETE_BATCH_SIZE, TRAVERSE_PATH_ROW_CAP } from './engine-constants.ts';
@@ -4071,6 +4071,15 @@ export class PostgresEngine implements BrainEngine {
     return { action: supersededId ? 'superseded_prior' : 'inserted', factId: newId, supersededId };
   }
 
+  // Ontology provenance visibility (OntologyReadOpts.excludePrivate): a
+  // WHERE-level predicate, so it lands before DISTINCT ON like the scope.
+  private ontologyPrivacyCond(opts?: { excludePrivate?: boolean }) {
+    const sql = this.sql;
+    return opts?.excludePrivate === true
+      ? sql.unsafe(`AND ${privateProvenanceFilterFragment('facts')}`)
+      : sql``;
+  }
+
   async getOntology(entitySlug: string, opts?: OntologyReadOpts): Promise<OntologyValue[]> {
     const sql = this.sql;
     const minConf = opts?.minConfidence ?? 0;
@@ -4087,6 +4096,7 @@ export class PostgresEngine implements BrainEngine {
       FROM facts
       WHERE entity_slug = ${entitySlug} AND dimension IS NOT NULL AND expired_at IS NULL
         ${scope}
+        ${this.ontologyPrivacyCond(opts)}
         AND COALESCE(valid_from, '-infinity'::timestamptz) <= COALESCE(${asof}::timestamptz, now())
         AND COALESCE(valid_until, 'infinity'::timestamptz) > COALESCE(${asof}::timestamptz, now())
         AND confidence >= ${minConf}
@@ -4108,7 +4118,7 @@ export class PostgresEngine implements BrainEngine {
     return rows.map((r) => ({ dimension: r.dimension, entities: Number(r.entities), observations: Number(r.observations) }));
   }
 
-  async findOntologyConflicts(opts?: { sourceId?: string; sourceIds?: string[]; minConfidence?: number }): Promise<OntologyConflict[]> {
+  async findOntologyConflicts(opts?: { sourceId?: string; sourceIds?: string[]; minConfidence?: number; excludePrivate?: boolean }): Promise<OntologyConflict[]> {
     const sql = this.sql;
     const minConf = opts?.minConfidence ?? 0;
     const scope = opts?.sourceIds && opts.sourceIds.length
@@ -4120,7 +4130,7 @@ export class PostgresEngine implements BrainEngine {
         FROM facts
         WHERE dimension IS NOT NULL AND expired_at IS NULL AND valid_until IS NULL
           AND (dim_status IS NULL OR dim_status = 'active')
-          AND confidence >= ${minConf} ${scope}
+          AND confidence >= ${minConf} ${scope} ${this.ontologyPrivacyCond(opts)}
       )
       SELECT entity_slug, dimension,
              json_agg(json_build_object('value', value, 'source', source, 'confidence', confidence, 'fact_id', fact_id)) AS values

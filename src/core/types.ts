@@ -1610,6 +1610,13 @@ export interface OntologyReadOpts {
   includeQuarantined?: boolean;
   sourceId?: string;
   sourceIds?: string[];
+  /**
+   * Drop observations whose provenance page (`source_markdown_slug` in the
+   * fact's own source) is `visibility: private`, before the per-dimension
+   * resolution: an untrusted caller resolves the newest value they may see,
+   * never a private one and never a hole where one was.
+   */
+  excludePrivate?: boolean;
 }
 
 // Raw data

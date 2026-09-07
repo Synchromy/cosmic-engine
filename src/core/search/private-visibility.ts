@@ -36,6 +36,17 @@ export function privatePagesFilterFragment(pageAlias: string): string {
 }
 
 /** Check the actual origin, independently of joins that redact its source. */
+/**
+ * Fact-row twin for ontology provenance: hide an observation whose provenance
+ * page (`source_markdown_slug`, looked up in the fact's own source) is
+ * private. Provenance that is not a page (for example `manual`) has no page
+ * row and passes. Deleted page rows still count (fail-closed).
+ */
+export function privateProvenanceFilterFragment(factAlias: string): string {
+  return `NOT EXISTS (SELECT 1 FROM pages pp WHERE pp.source_id = ${factAlias}.source_id ` +
+    `AND pp.slug = ${factAlias}.source_markdown_slug AND NOT (${privatePagesFilterFragment('pp')}))`;
+}
+
 export function privateLinkOriginFilterFragment(linkAlias: string): string {
   return `(${linkAlias}.origin_page_id IS NULL OR EXISTS (
     SELECT 1 FROM pages origin_private
