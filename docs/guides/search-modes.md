@@ -32,6 +32,7 @@ and maintenance commands remain available.
 | `searchLimit` default         | 10             | 25         | 50             |
 | `reranker` (cross-encoder)    | off            | `voyage:rerank-2.5` | `voyage:rerank-2.5` |
 | `autocut` (rerank-cliff cut)  | off            | on (0.35)  | on (0.35)      |
+| `exact_token_precedence` (id lookups) | on     | on         | on             |
 
 - **`conservative`** — smallest payloads. Pairs naturally with a cheap
   downstream model (Haiku-class) or a high query volume.
