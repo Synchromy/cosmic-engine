@@ -157,7 +157,7 @@ Every non-localOnly operation on the MCP surface: 124 tools across 23 areas. **S
 
 | Tool | Description | Scope | Starter | Gate |
 |---|---|---|---|---|
-| `append_page_event` | Append one typed interaction to an existing canonical page. | write | yes | `writer.append_page_event` |
+| `append_page_event` | Append one typed interaction to an existing canonical page. | write | yes |  |
 | `capture` | Capture a quick note into the brain — the "just remember this" write. | write | yes |  |
 | `delete_page` | Soft-delete a page. | write |  |  |
 | `fetch` | Fetch the full text of one search result by its `id` (OpenAI deep-research contract: the search/fetch pair). | read |  |  |
