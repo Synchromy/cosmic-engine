@@ -293,5 +293,5 @@ export async function forgetFactInFence(
     } catch { /* degrades to the pre-#4696 window (stale until the next sync) */ }
 
     return { ok: true, path: 'fence', reason };
-  }, { timeoutMs: 5_000 });
+  }, { timeoutMs: 5_000, sourceId: row.source_id });
 }
