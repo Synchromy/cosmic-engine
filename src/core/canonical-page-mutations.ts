@@ -9,6 +9,17 @@
  *
  * The journal is host-filesystem durable. This first C1 slice deliberately
  * makes no distributed/multi-host CAS claim.
+ *
+ * DATABASE-CANONICAL BRAINS. A brain with no `sync.repo_path` and no source
+ * `local_path` keeps its pages in the database only (a hosted deployment, a
+ * brain filled through put_page over MCP). For that brain the canonical bytes
+ * are the database row rendered as Markdown in a fixed form (sorted
+ * frontmatter keys, JSON-normalized values, sorted tags), the revision is the
+ * digest of those bytes, and "installing" a candidate means validating it and
+ * projecting it. Same locks, same journal, same receipts, no file. Without
+ * this, every revision-guarded mutation threw `canonical_unavailable` on such
+ * a brain while whole-page put_page kept working, which is the unsafe path
+ * these primitives exist to replace.
  */
 
 import { createHash } from 'node:crypto';
@@ -23,10 +34,19 @@ import { resolvePageWriteTarget, type PageWriteTarget } from './write-through.ts
 
 export type ProjectionState = 'current' | 'pending';
 
+/** Where canonical bytes live: a file under a configured repo, or the database row itself. */
+export type CanonicalTarget =
+  | Extract<PageWriteTarget, { ok: true }>
+  | { ok: true; database: true };
+
+export function isDatabaseCanonical(target: CanonicalTarget): target is { ok: true; database: true } {
+  return 'database' in target && target.database === true;
+}
+
 export interface CanonicalPageSnapshot {
   sourceId: string;
   slug: string;
-  target: Extract<PageWriteTarget, { ok: true }>;
+  target: CanonicalTarget;
   exists: boolean;
   content: string | null;
   revision: string | null;
@@ -282,13 +302,104 @@ export async function readCanonicalPage(
   }
   const target = await resolvePageWriteTarget(engine, slug, sourceId);
   if (!target.ok) {
-    throw new CanonicalMutationError('canonical_unavailable', `Canonical target is unavailable for ${sourceId}/${slug}: ${target.skipped}.`);
+    // Only the by-design outcome falls through to the database. A configured
+    // repo that is missing, foreign, or escaped is still an error: a file was
+    // supposed to be the truth and is not reachable.
+    const skipped = (target as { ok: false; skipped: string }).skipped;
+    if (skipped !== 'no_repo_configured') {
+      throw new CanonicalMutationError('canonical_unavailable', `Canonical target is unavailable for ${sourceId}/${slug}: ${skipped}.`);
+    }
+    return readDatabaseCanonicalPage(engine, slug, sourceId);
   }
   if (!existsSync(target.filePath)) {
     return { sourceId, slug, target, exists: false, content: null, revision: null };
   }
   const content = readFileSync(target.filePath, 'utf8');
   return { sourceId, slug, target, exists: true, content, revision: exactCanonicalRevision(content) };
+}
+
+const DATABASE_TARGET: CanonicalTarget = { ok: true, database: true };
+
+function sortedKeys(value: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(value).sort()) out[key] = value[key];
+  return out;
+}
+
+/**
+ * The one rendering of a page that a database-canonical brain calls its
+ * canonical bytes. Deterministic by construction: frontmatter values are
+ * JSON-normalized (a YAML date becomes the string the database stores),
+ * keys and tags are sorted (JSONB keeps no key order), and the body is the
+ * serializer's own form. Applied to the row on read and to every candidate
+ * before its revision is taken, so the revision a mutation returns is the one
+ * the next get_page computes.
+ */
+export function databaseCanonicalMarkdown(page: {
+  type: string;
+  title: string;
+  compiled_truth: string;
+  timeline?: string | null;
+  frontmatter?: Record<string, unknown> | null;
+}, tags: string[]): string {
+  const frontmatter = sortedKeys(JSON.parse(JSON.stringify(page.frontmatter ?? {})) as Record<string, unknown>);
+  delete frontmatter.type;
+  delete frontmatter.title;
+  delete frontmatter.tags;
+  return serializeMarkdown(
+    frontmatter,
+    page.compiled_truth,
+    page.timeline ?? '',
+    { type: page.type as never, title: page.title, tags: [...new Set(tags)].sort() },
+  );
+}
+
+/** Candidate bytes in the database-canonical form, from any Markdown. */
+export function databaseCanonicalForm(content: string, slug: string): string {
+  const parsed = parseMarkdown(content, `${slug}.md`);
+  return databaseCanonicalMarkdown(parsed, parsed.tags);
+}
+
+async function readDatabaseCanonicalPage(
+  engine: BrainEngine,
+  slug: string,
+  sourceId: string,
+): Promise<CanonicalPageSnapshot> {
+  const page = await engine.getPage(slug, { sourceId });
+  if (!page) return { sourceId, slug, target: DATABASE_TARGET, exists: false, content: null, revision: null };
+  const tags = await engine.getTags(slug, { sourceId });
+  const content = databaseCanonicalMarkdown(page, tags);
+  return { sourceId, slug, target: DATABASE_TARGET, exists: true, content, revision: exactCanonicalRevision(content) };
+}
+
+function validateCanonicalBytes(bytes: string, intendedRevision: string, slug: string): void {
+  if (exactCanonicalRevision(bytes) !== intendedRevision) {
+    throw new CanonicalMutationError('invalid_canonical', 'Canonical byte verification failed before rename.');
+  }
+  const parsed = parseMarkdown(bytes, `${slug}.md`, { validate: true, expectedSlug: slug });
+  if ((parsed.errors ?? []).length > 0) {
+    throw new CanonicalMutationError('invalid_canonical', `Candidate Markdown failed validation: ${(parsed.errors ?? []).map((e) => e.code).join(', ')}.`);
+  }
+}
+
+/** Install candidate bytes as the canonical page: an atomic file write under a
+ *  repo, or validation alone for a database-canonical brain, whose bytes are
+ *  installed by the projection that follows. */
+function installCanonicalBytes(current: CanonicalPageSnapshot, candidate: string, intendedRevision: string, slug: string): void {
+  if (isDatabaseCanonical(current.target)) {
+    validateCanonicalBytes(candidate, intendedRevision, slug);
+    return;
+  }
+  const filePath = current.target.filePath;
+  mkdirSync(dirname(filePath), { recursive: true });
+  atomicWriteFileSync(filePath, candidate, {
+    verify: (onDisk) => validateCanonicalBytes(onDisk, intendedRevision, slug),
+  });
+}
+
+/** buildContent output in the form the target's revision is taken over. */
+function canonicalCandidate(current: CanonicalPageSnapshot, built: string, slug: string): string {
+  return isDatabaseCanonical(current.target) ? databaseCanonicalForm(built, slug) : built;
 }
 
 function journalPath(root: string, sourceId: string, slug: string, idempotencyKey: string): string {
@@ -481,22 +592,11 @@ export async function commitCanonicalMutationV2(opts: {
           writeIntent(path, prior);
         }
       } else if (prior.state === 'prepared' && current.revision === prior.base_revision) {
-        candidate = opts.buildContent(current);
+        candidate = canonicalCandidate(current, opts.buildContent(current), opts.slug);
         if (exactCanonicalRevision(candidate) !== intendedRevision) {
           throw new CanonicalMutationError('idempotency_conflict', 'Retry rebuilt different canonical bytes for the same prepared mutation receipt.');
         }
-        mkdirSync(dirname(current.target.filePath), { recursive: true });
-        atomicWriteFileSync(current.target.filePath, candidate, {
-          verify: (onDisk) => {
-            if (exactCanonicalRevision(onDisk) !== intendedRevision) {
-              throw new CanonicalMutationError('invalid_canonical', 'Canonical byte verification failed before rename.');
-            }
-            const parsed = parseMarkdown(onDisk, `${opts.slug}.md`, { validate: true, expectedSlug: opts.slug });
-            if ((parsed.errors ?? []).length > 0) {
-              throw new CanonicalMutationError('invalid_canonical', `Candidate Markdown failed validation: ${(parsed.errors ?? []).map((e) => e.code).join(', ')}.`);
-            }
-          },
-        });
+        installCanonicalBytes(current, candidate, intendedRevision, opts.slug);
         prior = { ...prior, state: 'canonical_written', updated_at: new Date().toISOString() };
         writeIntent(path, prior);
         current = await readCanonicalPage(opts.engine, opts.slug, sourceId);
@@ -527,7 +627,7 @@ export async function commitCanonicalMutationV2(opts: {
           `Stale base_revision for ${sourceId}/${opts.slug}: expected ${current.revision ?? 'null'}, received ${acceptedBaseRevision ?? 'null'}.`,
         );
       }
-      candidate = opts.buildContent(current);
+      candidate = canonicalCandidate(current, opts.buildContent(current), opts.slug);
       intendedRevision = exactCanonicalRevision(candidate);
       const now = new Date().toISOString();
       prior = {
@@ -545,18 +645,7 @@ export async function commitCanonicalMutationV2(opts: {
         updated_at: now,
       };
       writeIntent(path, prior);
-      mkdirSync(dirname(current.target.filePath), { recursive: true });
-      atomicWriteFileSync(current.target.filePath, candidate, {
-        verify: (onDisk) => {
-          if (exactCanonicalRevision(onDisk) !== intendedRevision) {
-            throw new CanonicalMutationError('invalid_canonical', 'Canonical byte verification failed before rename.');
-          }
-          const parsed = parseMarkdown(onDisk, `${opts.slug}.md`, { validate: true, expectedSlug: opts.slug });
-          if ((parsed.errors ?? []).length > 0) {
-            throw new CanonicalMutationError('invalid_canonical', `Candidate Markdown failed validation: ${(parsed.errors ?? []).map((e) => e.code).join(', ')}.`);
-          }
-        },
-      });
+      installCanonicalBytes(current, candidate, intendedRevision, opts.slug);
       prior = { ...prior, state: 'canonical_written', updated_at: new Date().toISOString() };
       writeIntent(path, prior);
     }
@@ -624,7 +713,7 @@ export async function commitCanonicalMutation<T>(opts: {
   const sourceId = opts.sourceId ?? 'default';
   return withPageLock(opts.slug, async () => {
     const current = await readCanonicalPage(opts.engine, opts.slug, sourceId);
-    const candidate = opts.buildContent(current);
+    const candidate = canonicalCandidate(current, opts.buildContent(current), opts.slug);
     const intendedRevision = exactCanonicalRevision(candidate);
     const operationHash = exactCanonicalRevision(stableJson({
       operation: opts.operation,
@@ -689,18 +778,7 @@ export async function commitCanonicalMutation<T>(opts: {
 
     if (!resumable) {
       writeIntent(path, intent);
-      mkdirSync(dirname(current.target.filePath), { recursive: true });
-      atomicWriteFileSync(current.target.filePath, candidate, {
-        verify: (onDisk) => {
-          if (exactCanonicalRevision(onDisk) !== intendedRevision) {
-            throw new CanonicalMutationError('invalid_canonical', 'Canonical byte verification failed before rename.');
-          }
-          const parsed = parseMarkdown(onDisk, `${opts.slug}.md`, { validate: true, expectedSlug: opts.slug });
-          if ((parsed.errors ?? []).length > 0) {
-            throw new CanonicalMutationError('invalid_canonical', `Candidate Markdown failed validation: ${(parsed.errors ?? []).map((e) => e.code).join(', ')}.`);
-          }
-        },
-      });
+      installCanonicalBytes(current, candidate, intendedRevision, opts.slug);
       intent = { ...intent, state: 'canonical_written', updated_at: new Date().toISOString() };
       writeIntent(path, intent);
     }
