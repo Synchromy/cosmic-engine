@@ -12,11 +12,14 @@ git remote get-url upstream >/dev/null 2>&1 || git remote add upstream https://g
 git fetch -q upstream "refs/tags/$TAG:refs/tags/$TAG"
 git fetch -q origin
 [ -z "$(git status --porcelain)" ] || { echo "working tree is dirty; refusing"; exit 2; }
+# PATCHES.md lives on the cosmic/ branch, not on the upstream tag: read the list first.
+mapfile -t PATCH_BRANCHES < <(awk '/^```$/{f=!f; next} f && /^upstream\//{print $1}' PATCHES.md)
+[ "${#PATCH_BRANCHES[@]}" -gt 0 ] || { echo "no upstream/ branches listed in PATCHES.md; run this from a cosmic/ branch"; exit 2; }
 git checkout -q -B "$BRANCH" "$TAG"
 echo "== $BRANCH from $TAG ($(git rev-parse --short HEAD))"
 
 ledger_only() { [ "$(git diff --name-only --diff-filter=U | tr -d '\n')" = "scripts/module-size-limits.tsv" ]; }
-awk '/^```$/{f=!f; next} f && /^upstream\//{print $1}' PATCHES.md | while read -r b; do
+for b in "${PATCH_BRANCHES[@]}"; do
   git fetch -q origin "$b"
   if git merge -q --no-edit "origin/$b" >/dev/null 2>&1; then echo "merged  $b"
   elif ledger_only; then

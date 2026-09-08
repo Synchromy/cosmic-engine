@@ -16,19 +16,30 @@ Stacked branches share commits; merging in this order keeps the history clean.
 One line per branch: `<branch>  <upstream PR>  <what>`.
 
 ```
-upstream/c1-contained-mutations         #4834  revision-guarded canonical page mutations, receipts
-upstream/lock-fact-reconciliation       #4835  serialise destructive fact reconciliation
-upstream/extract-facts-pause-marker     #4836  extract_facts fails closed on an operator pause marker
-upstream/idempotent-append-page-event   #4837  append_page_event, idempotent typed interaction append
-upstream/patch-page-type-title          #4838  patch_page accepts dedicated type and title fields
-upstream/facts-since-composition        #4882  recall composes entity, session_id and since
-upstream/exact-id-precedence            #4883  exact opaque-identifier precedence (KNOBS_HASH_VERSION 29)
+upstream/c1-contained-mutations            #4834  revision-guarded canonical page mutations, receipts
+upstream/idempotent-append-page-event      #4837  append_page_event, idempotent typed interaction append
+upstream/patch-page-type-title             #4838  patch_page accepts dedicated type and title fields
+upstream/effective-date-path-and-created   #4957  effective_date reads a slug path date and frontmatter.created
+upstream/c1-database-canonical             #4958  C1 mutations commit against the database row when no repo is configured; no append switch
+upstream/sources-set-id                    —      sources set-id: a source's identity, changed safely
 ```
 
-Superseded in part by upstream: `upstream/chronicle-visibility` (#4881).
-Upstream v0.48.3.0 (#4941) gates the chronicle timeline reads itself; the
-ontology-provenance and `volunteer_chronicle` half is carried as a commit on
-the `cosmic/` branch, with the original test kept in full.
+## Landed upstream, dropped from the set
+
+Taken by v0.48.5.0 (the fix wave, credited to bhattman-dev): `upstream/lock-fact-reconciliation`
+(#4835, as #4954), `upstream/chronicle-visibility` (#4881, both halves; the
+carried ontology commit from cosmic/v0.48.3 is no longer needed and
+`test/chronicle-private-visibility.test.ts` is kept, 9 of 9 against upstream's
+own gate), `upstream/facts-since-composition` (#4882).
+
+## Held back from cosmic/v0.48.5, still open upstream
+
+`upstream/extract-facts-pause-marker` (#4836) conflicts in
+`src/core/cycle/extract-facts.ts`; `upstream/exact-id-precedence` (#4883)
+conflicts across the search files the v0.48.4.0 ranking wave rewrote
+(`src/core/search/{hybrid,mode,modes-report}.ts`, `src/core/types.ts`, docs,
+tests). Both need a hand rebase onto v0.48.5.0 before they return to the list.
+Neither is needed for cosmic-hub gate 4 (#391) or #393.
 
 Not carried from the Mac-era 17: bounded person create and Google Contacts
 staging (default off, unused in the hub topology, never upstreamed).
@@ -36,12 +47,12 @@ staging (default off, unused in the hub topology, never upstreamed).
 ## Rebuild on a new upstream tag
 
 ```
-scripts/rebuild-cosmic.sh v0.48.4.0
+scripts/rebuild-cosmic.sh v0.48.6.0
 ```
 
-Fetches the tag, creates `cosmic/v0.48.4`, merges the branches above in
+Reads this list from the branch you run it on, fetches the tag, creates `cosmic/v0.48.6`, merges the branches above in
 order, resolves the module size ledger to upstream's side and re-derives it,
-cherry-picks the carried commits, runs the touched test files. It stops at
+cherry-picks the carried commits (this file, the script and any kept test), runs the touched test files. It stops at
 the first real conflict and says which branch. When an upstream PR merges,
 delete its line here and its branch; the next rebuild carries one patch less.
 
