@@ -24,15 +24,35 @@ upstream/patch-page-type-title          #4838  patch_page accepts dedicated type
 upstream/facts-since-composition        #4882  recall composes entity, session_id and since
 upstream/exact-id-precedence            #4883  exact opaque-identifier precedence (KNOBS_HASH_VERSION 29)
 upstream/sources-set-id                 —      sources set-id: a source's identity, changed safely
+upstream/list-pages-slug-prefix         —      list_pages slug_prefix: ask for one directory
 ```
 
-⚠️ `upstream/sources-set-id` has **no upstream PR yet** — the only line here
-without one. It was written for cosmic-hub #423 (a deployment renamed from
-`pilot` to `khoa` everywhere except inside its own brain) and merged straight
+⚠️ `upstream/sources-set-id` and `upstream/list-pages-slug-prefix` have **no
+upstream PR yet** — the only two lines here without one.
+
+`upstream/sources-set-id` was written for cosmic-hub #423 (a deployment renamed
+from `pilot` to `khoa` everywhere except inside its own brain) and merged straight
 to the `cosmic/` branch first, which would have dropped it at the next
 `rebuild-cosmic.sh` since that replays only the branches listed above. The
 branch exists now and this line is what makes it survive. It is upstream-bound
 like the rest — offering it needs a decision, not a rebase.
+
+`upstream/list-pages-slug-prefix` was written for cosmic-hub #325: a skill page
+written straight at the engine with a declared type that is not `guide` is
+invisible to the Skills catalog, because the catalog can only ask "every page
+of type guide" and then filter to `skills/` client-side. The filter layer has
+had `slugPrefix` since storage tiering — indexed by the (source_id, slug)
+btree — but no operation exposed it, so the one cheap fix was unreachable from
+outside the process. With the parameter, the catalog asks for `skills/`
+directly and drops the type filter, which makes it both CORRECT and narrower
+than it is today. It only ever narrows a set the caller could already list, so
+it is upstream-bound like the rest and offering it needs a decision, not a
+rebase.
+
+⚠️ The hub cannot use it until a rebuild carries it: asking for `slug_prefix`
+against an engine that ignores the parameter would return every page and turn
+the catalog's one call back into the ten-second unfiltered walk that #322
+removed. So cosmic-hub #325 stays open until then, deliberately.
 
 Superseded in part by upstream: `upstream/chronicle-visibility` (#4881).
 Upstream v0.48.3.0 (#4941) gates the chronicle timeline reads itself; the
