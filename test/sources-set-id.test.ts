@@ -11,8 +11,11 @@
  * Runs against PGLite, like the other sources tests.
  */
 import { describe, test, expect, beforeAll, beforeEach, afterAll, spyOn } from 'bun:test';
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { PGLiteEngine } from '../src/core/pglite-engine.ts';
-import { runSetId, discoverTargets } from '../src/commands/sources-set-id.ts';
+import { runSetId, discoverTargets, type FsOps } from '../src/commands/sources-set-id.ts';
 import { withEnv } from './helpers/with-env.ts';
 
 let engine: PGLiteEngine;
@@ -140,5 +143,116 @@ describe('the migration', () => {
     const [orphans] = await engine.executeRaw<{ n: number }>(
       `SELECT count(*)::int AS n FROM pages WHERE source_id NOT IN (SELECT id FROM sources)`, []);
     expect(orphans!.n).toBe(0);
+  });
+});
+
+/** 🔴 The half that was missing, and the reason cosmic-hub #438 exists.
+ *
+ *  The first version of this command rewrote `local_path` as a string and left
+ *  the directory where it was, believing a later reconcile would re-render the
+ *  tree. It does not. Run against Cosmic on 2026-09-08 that left the brain
+ *  advertising `/data/brain/khoa` while 2,499 pages sat in `/data/brain/pilot`,
+ *  and the hub's sync manifest — which identifies a page by joining its first
+ *  path segment to `source_id` — went to ZERO entries. Sync is a mirror, so an
+ *  empty manifest instructs every joined device to delete every page. Nothing
+ *  pulled during the window. That was luck.
+ *
+ *  The property these tests defend: the database and the vault directory move
+ *  together or neither moves. */
+describe('the vault directory moves with the id', () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'setid-'));
+  });
+  afterAll(() => { /* per-test dirs are inside tmpdir and small */ });
+
+  async function sourceAt(dir: string): Promise<void> {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'a.md'), '# A');
+    await engine.executeRaw(`UPDATE sources SET local_path = $1 WHERE id = 'old'`, [dir]);
+  }
+
+  test('the directory is renamed alongside the rows', async () => {
+    const from = join(root, 'old');
+    await sourceAt(from);
+    await runSetId(engine, ['old', 'new', '--confirm']);
+
+    expect(existsSync(from)).toBe(false);
+    expect(existsSync(join(root, 'new'))).toBe(true);
+    // The pages came with it — a rename, never a copy that could half-finish.
+    expect(existsSync(join(root, 'new', 'a.md'))).toBe(true);
+
+    const [r] = await engine.executeRaw<{ local_path: string }>(
+      `SELECT local_path FROM sources WHERE id = 'new'`, []);
+    expect(r!.local_path).toBe(join(root, 'new'));
+  });
+
+  // Only a human knows which copy is real, so the command must not choose.
+  test('it refuses when something already occupies the new path, and writes nothing', async () => {
+    await sourceAt(join(root, 'old'));
+    mkdirSync(join(root, 'new'));
+    const e = exit();
+    await expect(runSetId(engine, ['old', 'new', '--confirm'])).rejects.toThrow('exit:4');
+    e.mockRestore();
+
+    const [r] = await engine.executeRaw<{ n: number }>(
+      `SELECT count(*)::int AS n FROM sources WHERE id = 'old'`, []);
+    expect(r!.n).toBe(1);
+    expect(existsSync(join(root, 'old'))).toBe(true);
+  });
+
+  // A path recorded by a different machine is legitimate. It must not stop the
+  // rename — but the operator has to be told, because until they move it the
+  // manifest is empty.
+  test('a local_path that is not on this machine warns instead of failing', async () => {
+    await engine.executeRaw(
+      `UPDATE sources SET local_path = '/nowhere/that/exists/old' WHERE id = 'old'`, []);
+    const said: string[] = [];
+    const log = spyOn(console, 'log').mockImplementation(((m?: unknown) => { said.push(String(m)); }) as never);
+    await runSetId(engine, ['old', 'new', '--confirm']);
+    log.mockRestore();
+
+    const [r] = await engine.executeRaw<{ local_path: string }>(
+      `SELECT local_path FROM sources WHERE id = 'new'`, []);
+    expect(r!.local_path).toBe('/nowhere/that/exists/new');
+    expect(said.join('\n')).toContain('NOT moved');
+  });
+
+  // 🔴 One operation over two stores. If the filesystem half throws, the
+  // database half must not survive it.
+  test('a failed move rolls the database back whole', async () => {
+    const from = join(root, 'old');
+    await sourceAt(from);
+    const boom: FsOps = {
+      existsSync,
+      renameSync: () => { throw new Error('EXDEV: simulated cross-device rename'); },
+    };
+    await expect(runSetId(engine, ['old', 'new', '--confirm'], boom)).rejects.toThrow('EXDEV');
+
+    const rows = await engine.executeRaw<{ id: string }>(
+      `SELECT id FROM sources WHERE id IN ('old','new')`, []);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.id).toBe('old');
+    expect(existsSync(from)).toBe(true);
+  });
+
+  // The mirror image: the move succeeded and COMMIT then failed. The directory
+  // has to come back, or the database describes a tree that is no longer there.
+  test('a commit that fails after the move puts the directory back', async () => {
+    const from = join(root, 'old');
+    await sourceAt(from);
+    const failAtCommit = {
+      ...engine,
+      executeRaw: engine.executeRaw.bind(engine),
+      transaction: async (fn: (tx: typeof engine) => Promise<unknown>) => {
+        await engine.transaction(fn);
+        throw new Error('commit failed');
+      },
+    } as unknown as typeof engine;
+
+    await expect(runSetId(failAtCommit, ['old', 'new', '--confirm'])).rejects.toThrow('commit failed');
+    expect(existsSync(from)).toBe(true);
+    expect(existsSync(join(root, 'new'))).toBe(false);
   });
 });
