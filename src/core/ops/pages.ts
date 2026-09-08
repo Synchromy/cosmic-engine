@@ -1279,6 +1279,30 @@ const list_pages: Operation = {
       description: 'Sort order. Default updated_desc (matches pre-v0.29). Options: updated_desc, updated_asc, created_desc, slug.',
     },
     include_deleted: { type: 'boolean', description: 'v0.26.5: include soft-deleted pages (default: false). Used by restore workflows and operator diagnostics.' },
+    // The filter layer has had `slugPrefix` since storage tiering — indexed by
+    // the (source_id, slug) UNIQUE btree, so it is a range scan rather than a
+    // table walk — but no operation exposed it, so no MCP or CLI caller could
+    // ask for a directory.
+    //
+    // Without it, "every page under skills/" is only expressible as "every
+    // page of type X, then filter client-side", which is wrong whenever the
+    // pages you want do not share a type, and expensive whenever they do:
+    // a cursor walk is serial by construction, so a caller enumerating one
+    // small directory pays for the size of the whole brain.
+    //
+    // It only ever NARROWS a result set the caller could already list — the
+    // source scope, the private-page predicate and the remote row cap all
+    // still apply and are evaluated independently — so it opens no new read
+    // surface. Accepts `skills/` or `skills/*`; `normalizeSlugPrefix` folds
+    // the second form into the first, matching how bound_slug_prefixes is
+    // written elsewhere.
+    slug_prefix: {
+      type: 'string',
+      description:
+        "Prefix-match on slug, e.g. 'skills/' to list one directory. Uses the "
+        + "(source_id, slug) index. Trailing '/*' is accepted and normalized. "
+        + 'Composes with type, tag and source_id.',
+    },
     // #4400 — list_pages had no source-scoping param at all: unlike
     // search/query it silently ignored any caller-supplied source and always
     // fell back to whatever federatedSearchScope() resolved from ctx alone,
@@ -1354,6 +1378,12 @@ const list_pages: Operation = {
       offset,
       includeDeleted: (p.include_deleted as boolean) === true,
       updated_after: typeof p.updated_after === 'string' ? p.updated_after : undefined,
+      // Empty string is not a prefix, it is "no filter" — and passing it
+      // through as one would make `slug_prefix: ''` mean LIKE '%', which is
+      // the same rows by a slower path.
+      slugPrefix: typeof p.slug_prefix === 'string' && p.slug_prefix !== ''
+        ? normalizeSlugPrefix(p.slug_prefix)
+        : undefined,
       sort,
       excludePrivate,
       ...scope,
@@ -1372,7 +1402,7 @@ const list_pages: Operation = {
       console.error(
         `[list_pages] output truncated at ${limit} rows (default 50). ` +
         `Pass an explicit limit, page through with sort=updated_asc + ` +
-        `updated_after=<last row's updated_at>, or narrow with type/tag.`,
+        `updated_after=<last row's updated_at>, or narrow with type/tag/slug_prefix.`,
       );
     }
     return pages.map(pg => ({
