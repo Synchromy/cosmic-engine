@@ -1898,7 +1898,8 @@ Subcommands:
                                     Permanently delete archived sources.
                                     Without <id>: purge all expired archives.
                                     With <id>: force-purge (requires --confirm-destructive).
-  rename <id> <new-name>            Rename display name (id is immutable).
+  rename <id> <new-name>            Rename the display name only. To change the
+                                    id itself, see set-id below.
   default <id>                      Set the brain-level default source.
   attach <id>                       Write .gbrain-source in CWD (like kubectl context).
   detach                            Remove .gbrain-source from CWD.
