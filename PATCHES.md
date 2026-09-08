@@ -23,7 +23,16 @@ upstream/idempotent-append-page-event   #4837  append_page_event, idempotent typ
 upstream/patch-page-type-title          #4838  patch_page accepts dedicated type and title fields
 upstream/facts-since-composition        #4882  recall composes entity, session_id and since
 upstream/exact-id-precedence            #4883  exact opaque-identifier precedence (KNOBS_HASH_VERSION 29)
+upstream/sources-set-id                 —      sources set-id: a source's identity, changed safely
 ```
+
+⚠️ `upstream/sources-set-id` has **no upstream PR yet** — the only line here
+without one. It was written for cosmic-hub #423 (a deployment renamed from
+`pilot` to `khoa` everywhere except inside its own brain) and merged straight
+to the `cosmic/` branch first, which would have dropped it at the next
+`rebuild-cosmic.sh` since that replays only the branches listed above. The
+branch exists now and this line is what makes it survive. It is upstream-bound
+like the rest — offering it needs a decision, not a rebase.
 
 Superseded in part by upstream: `upstream/chronicle-visibility` (#4881).
 Upstream v0.48.3.0 (#4941) gates the chronicle timeline reads itself; the
