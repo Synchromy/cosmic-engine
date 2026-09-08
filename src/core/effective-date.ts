@@ -10,13 +10,24 @@
  *   2. frontmatter.date          — dated essays
  *   3. frontmatter.published     — writing/
  *   4. filename-date             — leading YYYY-MM-DD in basename
- *   5. updated_at                — fallback
- *   6. created_at                — last resort (only if updated_at NULL)
+ *   5. path-date                 — first YYYY-MM-DD in a slug directory segment
+ *   6. frontmatter.created       — the author's creation stamp
+ *   7. updated_at                — fallback
+ *   8. created_at                — last resort (only if updated_at NULL)
  *
  * Per-prefix override: for `daily/` and `meetings/` slug prefixes, the
  * filename-date jumps to position 1 — the filename is the user's primary
  * signal there ("daily/2024-03-15.md" the FILE date matters more than any
- * frontmatter the user pasted).
+ * frontmatter the user pasted). The path-date follows it there too.
+ *
+ * Why 5 and 6 exist: a brain moved between engines lands every page with
+ * a fresh row time, and a page with none of 1-4 then reads as the day of
+ * the move. Measured on a 1,504-page brain: 759 pages fell back that way,
+ * while 651 of them carried a date in a directory name and 128 more in a
+ * `created:` line. Both are the author's own statement of when the page
+ * happened; ignoring them turned a dated brain into one day. The path-date
+ * outranks `created:` because directory dates are placed by hand and
+ * `created:` is often re-stamped by tooling on the way through.
  *
  * Returns BOTH the parsed Date and the source label so the doctor's
  * `effective_date_health` check can detect "fell back to updated_at" rows
@@ -59,6 +70,9 @@ const FILENAME_FIRST_PREFIXES = ['daily/', 'meetings/'];
 
 const MIN_DATE_MS = Date.UTC(1990, 0, 1);
 const FILENAME_DATE_RE = /^(\d{4}-\d{2}-\d{2})/;
+/** A whole YYYY-MM-DD inside a directory segment: `2026-06-25`, `w-2026-06-25`,
+ *  but not the first ten characters of a longer digit run. */
+const PATH_DATE_RE = /(?:^|[^0-9])(\d{4}-\d{2}-\d{2})(?![0-9])/;
 
 function maxDateMs(): number {
   // NOW + 1 year, computed at call time so tests with a mocked Date.now()
@@ -105,6 +119,19 @@ function extractFilenameDate(filename: string | null | undefined): Date | null {
   return validateInRange(parseDateLoose(m[1]));
 }
 
+/** The first valid date in the slug's DIRECTORY segments. The basename is
+ *  the filename-date's job and is deliberately not read here. */
+function extractPathDate(slug: string): Date | null {
+  const segments = slug.split('/');
+  for (const seg of segments.slice(0, -1)) {
+    const m = seg.match(PATH_DATE_RE);
+    if (!m) continue;
+    const d = validateInRange(parseDateLoose(m[1]));
+    if (d) return d;
+  }
+  return null;
+}
+
 function hasFilenameFirstPrefix(slug: string): boolean {
   for (const p of FILENAME_FIRST_PREFIXES) {
     if (slug.startsWith(p)) return true;
@@ -124,22 +151,30 @@ export function computeEffectiveDate(opts: ComputeEffectiveDateOpts): EffectiveD
   const fmEvent = validateInRange(parseDateLoose(frontmatter.event_date));
   const fmDate = validateInRange(parseDateLoose(frontmatter.date));
   const fmPublished = validateInRange(parseDateLoose(frontmatter.published));
+  const fmCreated = validateInRange(parseDateLoose(frontmatter.created));
   const filenameDate = extractFilenameDate(filename);
+  const pathDate = extractPathDate(slug);
 
   // Build the ordered candidate list. For filename-first prefixes
-  // (daily/, meetings/) the filename moves to the head of the chain.
+  // (daily/, meetings/) the filename moves to the head of the chain, and
+  // the path-date goes with it. `created` is always last: it is a real
+  // statement, but the one most often re-stamped by tooling.
   const candidates: Array<{ date: Date | null; source: EffectiveDateSource }> = filenameFirst
     ? [
         { date: filenameDate, source: 'filename' },
+        { date: pathDate, source: 'path' },
         { date: fmEvent, source: 'event_date' },
         { date: fmDate, source: 'date' },
         { date: fmPublished, source: 'published' },
+        { date: fmCreated, source: 'created' },
       ]
     : [
         { date: fmEvent, source: 'event_date' },
         { date: fmDate, source: 'date' },
         { date: fmPublished, source: 'published' },
         { date: filenameDate, source: 'filename' },
+        { date: pathDate, source: 'path' },
+        { date: fmCreated, source: 'created' },
       ];
 
   for (const c of candidates) {
