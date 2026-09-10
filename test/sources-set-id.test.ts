@@ -32,7 +32,7 @@ async function fresh(): Promise<void> {
   await engine.executeRaw(`DELETE FROM pages WHERE source_id IN ('old','new','keep')`, []);
   await engine.executeRaw(`DELETE FROM sources WHERE id IN ('old','new','keep')`, []);
   await engine.executeRaw(
-    `INSERT INTO sources (id, name, local_path) VALUES ('old', 'Old', '/data/brain/old')`, []);
+    `INSERT INTO sources (id, name, local_path) VALUES ('old', 'Old', '/srv/brains/old')`, []);
 }
 
 const exit = () => spyOn(process, 'exit').mockImplementation(((c?: number) => {
@@ -40,7 +40,7 @@ const exit = () => spyOn(process, 'exit').mockImplementation(((c?: number) => {
 }) as never);
 
 beforeEach(fresh);
-afterAll(async () => { await engine?.close?.(); });
+afterAll(async () => { await engine.disconnect(); });
 
 describe('discovery', () => {
   // 🔴 The distinction the whole command rests on. `raw_data.source` holds
@@ -119,7 +119,7 @@ describe('the migration', () => {
     expect(rows[0]!.id).toBe('new');
     // The display name is carried, not reset — this changes identity, not label.
     expect(rows[0]!.name).toBe('Old');
-    expect(rows[0]!.local_path).toBe('/data/brain/new');
+    expect(rows[0]!.local_path).toBe('/srv/brains/new');
   });
 
   test('another source is left completely alone', async () => {
@@ -151,7 +151,7 @@ describe('the migration', () => {
  *  The first version of this command rewrote `local_path` as a string and left
  *  the directory where it was, believing a later reconcile would re-render the
  *  tree. It does not. Run against Cosmic on 2026-09-08 that left the brain
- *  advertising `/data/brain/khoa` while 2,499 pages sat in `/data/brain/pilot`,
+ *  advertising `<brains>/khoa` while 2,499 pages sat in `<brains>/pilot`,
  *  and the hub's sync manifest — which identifies a page by joining its first
  *  path segment to `source_id` — went to ZERO entries. Sync is a mirror, so an
  *  empty manifest instructs every joined device to delete every page. Nothing
@@ -245,7 +245,7 @@ describe('the vault directory moves with the id', () => {
     const failAtCommit = {
       ...engine,
       executeRaw: engine.executeRaw.bind(engine),
-      transaction: async (fn: (tx: typeof engine) => Promise<unknown>) => {
+      transaction: async (fn: Parameters<PGLiteEngine['transaction']>[0]) => {
         await engine.transaction(fn);
         throw new Error('commit failed');
       },
