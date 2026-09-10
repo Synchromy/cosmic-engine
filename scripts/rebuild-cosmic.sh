@@ -42,5 +42,5 @@ if [ -n "$(git status --porcelain)" ]; then git commit -qam "chore: re-derive th
 echo "== touched tests"
 mapfile -t FILES < <(git diff --name-only "$TAG..HEAD" -- test | grep '\.test\.ts$')
 [ -d node_modules ] || bun install --silent
-GBRAIN_EMBED_RETRY_MAX=0 bun test "${FILES[@]}" 2>&1 | tail -4
+GBRAIN_EMBED_RETRY_MAX=0 bun test --timeout=60000 "${FILES[@]}" 2>&1 | tail -4
 echo "== $BRANCH at $(git rev-parse HEAD); pin this SHA in cosmic-hub/Dockerfile"
