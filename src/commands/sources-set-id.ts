@@ -44,8 +44,8 @@
  * first version rewrote `local_path` as a string and left the directory
  * alone, on the stated belief that "the vault is a render of the database,
  * so the next reconcile writes the new tree". It does not. Cosmic ran that
- * version on 2026-09-08: the row then advertised `/data/brain/khoa` while
- * all 2,499 pages still sat in `/data/brain/pilot`. The hub's sync manifest
+ * version on 2026-09-08: the row then advertised `<brains>/khoa` while
+ * all 2,499 pages still sat in `<brains>/pilot`. The hub's sync manifest
  * identifies a page by joining its FIRST PATH SEGMENT on disk to `source_id`,
  * so every page missed the join and the manifest went to ZERO entries. An
  * empty manifest is not inert — sync is a mirror, so it means "delete every
