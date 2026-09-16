@@ -22,6 +22,7 @@ upstream/patch-page-type-title             #4838  patch_page accepts dedicated t
 upstream/effective-date-path-and-created   #4957  effective_date reads a slug path date and frontmatter.created
 upstream/c1-database-canonical             #4958  C1 mutations commit against the database row when no repo is configured; no append switch
 upstream/sources-set-id                    —      sources set-id: a source's identity, changed safely
+upstream/list-pages-effective-date         #5144  list_pages exposes effective_after/effective_before
 ```
 
 ## Landed upstream, dropped from the set
