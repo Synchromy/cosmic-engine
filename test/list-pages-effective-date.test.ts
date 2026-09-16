@@ -2,7 +2,7 @@
  * list_pages gains `effective_after` / `effective_before`, so a caller can ask
  * when a thing HAPPENS rather than when its page last CHANGED.
  *
- * The filter layer has had both since v0.29.1 — declared on `PageFilters`,
+ * The filter layer has had both since v0.46.25.0 (055ac6c75) — declared on `PageFilters`,
  * implemented in postgres-engine and pglite-engine, with an index on
  * `COALESCE(effective_date, updated_at)` put there for exactly this — but no
  * operation exposed them. `updated_after` was surfaced on this tool and its
