@@ -1184,7 +1184,8 @@ const list_pages: Operation = {
       description: 'ISO date (YYYY-MM-DD) or full timestamp. Returns pages with updated_at > value.',
     },
     // Same move as updated_after above: effective_after/effective_before have
-    // been on PageFilters and implemented in both engines since v0.29.1, with
+    // been on PageFilters and implemented in both engines since v0.46.25.0
+    // (055ac6c75, 2026-08-21), with
     // an index on COALESCE(effective_date, updated_at) put there for them, but
     // were never surfaced on this tool. An agent could therefore ask when a
     // page CHANGED but not when its subject HAPPENS, so answering "what is on
