@@ -24,15 +24,17 @@ upstream/patch-page-type-title          #4838  patch_page accepts dedicated type
 upstream/facts-since-composition        #4882  recall composes entity, session_id and since
 upstream/exact-id-precedence            #4883  exact opaque-identifier precedence (KNOBS_HASH_VERSION 29)
 upstream/sources-set-id                 —      sources set-id: a source's identity, changed safely
-upstream/list-pages-effective-date      —      list_pages exposes effective_after/effective_before
+upstream/list-pages-effective-date      #5144  list_pages exposes effective_after/effective_before
 ```
 
-⚠️ Two lines have **no upstream PR yet**: `upstream/sources-set-id` and
-`upstream/list-pages-effective-date`. Both are upstream-bound like the rest;
-offering them needs a decision, not a rebase.
+⚠️ One line has **no upstream PR yet**: `upstream/sources-set-id`. It is
+upstream-bound like the rest; offering it needs a decision, not a rebase.
 
-`upstream/list-pages-effective-date` surfaces two filters upstream already
-implements. `PageFilters.effective_after` / `effective_before` have been on
+`upstream/list-pages-effective-date` is offered upstream as **#5144**, opened
+2026-09-16 from `upstream-pr/list-pages-effective-date`, which is the same
+change rebased onto upstream `master` (`668b9bac3`) with this repository's
+private issue references removed. Delete this line and the branch when it
+merges. It surfaces two filters upstream already implements. `PageFilters.effective_after` / `effective_before` have been on
 both engines since v0.29.1, with an index on `COALESCE(effective_date,
 updated_at)` put there for them, and no operation exposed them — so an agent
 could ask when a page changed but not when its subject happens. Written for
