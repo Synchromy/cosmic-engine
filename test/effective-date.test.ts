@@ -61,6 +61,37 @@ describe('computeEffectiveDate precedence chain (default order)', () => {
     expect(r.date?.toISOString().startsWith('2024-03-15')).toBe(true);
   });
 
+  // The failure this exists for: a calendar connector writes `occurred_at`,
+  // which was in no candidate, so every event page fell through to updated_at
+  // and was dated by WHEN IT WAS INGESTED. A read asking for the coming week
+  // then returned empty on a calendar that was not — silently, because an
+  // ingest time is always a real date, just the wrong one.
+  test('occurred_at dates the page when nothing else does', () => {
+    const r = run({ fm: { occurred_at: '2026-08-04T07:00:00.000Z' } });
+    expect(r.source).toBe('occurred_at');
+    expect(r.date?.toISOString().startsWith('2026-08-04')).toBe(true);
+  });
+
+  test('a hand-written event_date still outranks occurred_at', () => {
+    const r = run({ fm: { event_date: '2024-03-15', occurred_at: '2026-08-04T07:00:00.000Z' } });
+    expect(r.source).toBe('event_date');
+  });
+
+  test('occurred_at outranks date and published', () => {
+    const r = run({ fm: { occurred_at: '2026-08-04', date: '2024-04-01', published: '2024-05-01' } });
+    expect(r.source).toBe('occurred_at');
+  });
+
+  // 🔴 THE WHOLE POINT: a meeting in the coming week must survive. maxDateMs()
+  // is now + 1 year, so this is in range — but nothing pinned that, and a
+  // tighter bound would defeat the fix without failing any other test.
+  test('a meeting next week is kept, not rejected as out of range', () => {
+    const nextWeek = new Date(Date.now() + 7 * 24 * 3600 * 1000);
+    const r = run({ fm: { occurred_at: nextWeek.toISOString() } });
+    expect(r.source).toBe('occurred_at');
+    expect(r.date?.getTime()).toBe(nextWeek.getTime());
+  });
+
   test('date wins when event_date absent', () => {
     const r = run({ fm: { date: '2024-04-01', published: '2024-05-01' } });
     expect(r.source).toBe('date');

@@ -7,20 +7,29 @@
  *
  * Precedence chain (default order):
  *   1. frontmatter.event_date    — meeting / event pages
- *   2. frontmatter.date          — dated essays
- *   3. frontmatter.published     — writing/
- *   4. filename-date             — leading YYYY-MM-DD in basename
- *   5. path-date                 — first YYYY-MM-DD in a slug directory segment
- *   6. frontmatter.created       — the author's creation stamp
- *   7. updated_at                — fallback
- *   8. created_at                — last resort (only if updated_at NULL)
+ *   2. frontmatter.occurred_at   — the same thing, named by a connector
+ *   3. frontmatter.date          — dated essays
+ *   4. frontmatter.published     — writing/
+ *   5. filename-date             — leading YYYY-MM-DD in basename
+ *   6. path-date                 — first YYYY-MM-DD in a slug directory segment
+ *   7. frontmatter.created       — the author's creation stamp
+ *   8. updated_at                — fallback
+ *   9. created_at                — last resort (only if updated_at NULL)
  *
  * Per-prefix override: for `daily/` and `meetings/` slug prefixes, the
  * filename-date jumps to position 1 — the filename is the user's primary
  * signal there ("daily/2024-03-15.md" the FILE date matters more than any
  * frontmatter the user pasted). The path-date follows it there too.
  *
- * Why 5 and 6 exist: a brain moved between engines lands every page with
+ * Why 2 exists: `event_date` is what a person writes by hand, and connectors
+ * write their own name for it. A calendar connector emitting `occurred_at`
+ * had every one of its pages fall all the way through to `updated_at`, so a
+ * meeting was dated by WHEN IT WAS INGESTED. Nothing errored: a read asking
+ * for the coming week returned empty on a calendar that was not, because no
+ * page can carry a future ingest time. It sits below `event_date` so an
+ * explicit hand-written date still wins where a page has both.
+ *
+ * Why 6 and 7 exist: a brain moved between engines lands every page with
  * a fresh row time, and a page with none of 1-4 then reads as the day of
  * the move. Measured on a 1,504-page brain: 759 pages fell back that way,
  * while 651 of them carried a date in a directory name and 128 more in a
@@ -149,6 +158,7 @@ export function computeEffectiveDate(opts: ComputeEffectiveDateOpts): EffectiveD
   const filenameFirst = hasFilenameFirstPrefix(slug);
 
   const fmEvent = validateInRange(parseDateLoose(frontmatter.event_date));
+  const fmOccurred = validateInRange(parseDateLoose(frontmatter.occurred_at));
   const fmDate = validateInRange(parseDateLoose(frontmatter.date));
   const fmPublished = validateInRange(parseDateLoose(frontmatter.published));
   const fmCreated = validateInRange(parseDateLoose(frontmatter.created));
@@ -164,12 +174,14 @@ export function computeEffectiveDate(opts: ComputeEffectiveDateOpts): EffectiveD
         { date: filenameDate, source: 'filename' },
         { date: pathDate, source: 'path' },
         { date: fmEvent, source: 'event_date' },
+        { date: fmOccurred, source: 'occurred_at' },
         { date: fmDate, source: 'date' },
         { date: fmPublished, source: 'published' },
         { date: fmCreated, source: 'created' },
       ]
     : [
         { date: fmEvent, source: 'event_date' },
+        { date: fmOccurred, source: 'occurred_at' },
         { date: fmDate, source: 'date' },
         { date: fmPublished, source: 'published' },
         { date: filenameDate, source: 'filename' },

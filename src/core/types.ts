@@ -187,6 +187,8 @@ export interface Page {
 
 export type EffectiveDateSource =
   | 'event_date'
+  /** `frontmatter.occurred_at`: what a connector calls an event's own time. */
+  | 'occurred_at'
   | 'date'
   | 'published'
   | 'filename'
