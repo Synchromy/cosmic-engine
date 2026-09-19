@@ -20,7 +20,6 @@ upstream/c1-contained-mutations            #4834  revision-guarded canonical pag
 upstream/idempotent-append-page-event      #4837  append_page_event, idempotent typed interaction append
 upstream/patch-page-type-title             #4838  patch_page accepts dedicated type and title fields
 upstream/effective-date-path-and-created   #4957  effective_date reads a slug path date and frontmatter.created
-upstream/effective-date-occurred-at        TBD    effective_date reads frontmatter.occurred_at, an event's own time as a connector names it
 upstream/c1-database-canonical             #4958  C1 mutations commit against the database row when no repo is configured; no append switch
 upstream/sources-set-id                    —      sources set-id: a source's identity, changed safely
 upstream/list-pages-effective-date         #5144  list_pages exposes effective_after/effective_before
