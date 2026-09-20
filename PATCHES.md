@@ -97,3 +97,7 @@ query even without a callback.
 ## Local hybrid retrieval-completion foundation
 
 Optional trusted completion evidence follows the selected search/query result through lexical, vector, alias, exact and relational retrieval. Failed required hydration and discarded vector/adaptive/CRAG paths cannot authorize an empty fallback. Standalone behavior and the hard-disabled semantic result cache remain unchanged. This is the first B2b slice only; entity/think/context assemblers, cursor effects and host accounting integration remain prerequisites. The hybrid module ceiling increases 3295 to 3320 solely for the reviewed optional completion plumbing; no unrelated search extraction. Local-only, no upstream/publication or activation claim.
+
+## Local entity and context completion
+
+Optional trusted completion follows accepted entity-card lookup/hydration and pack/delta assembly. Array snapshots and evidence seal together at the existing inner deadline; late work cannot authorize or alter a delivered snapshot. Configured all-unavailable results stop before enrichment and the later delta cursor write. Standalone behavior, source/privacy filtering and query counts are unchanged. First-wake and successful cursor effects, think/volunteer families and host integration remain prerequisites. Local-only; no upstream PR, release or paid activation.

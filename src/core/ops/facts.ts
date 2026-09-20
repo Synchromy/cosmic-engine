@@ -1,3 +1,4 @@
+import { RetrievalCompletion } from '../retrieval-completion.ts';
 import { readHolders } from './context.ts';
 /**
  * Hot-memory (facts) operation cluster — pure move from operations.ts
@@ -534,7 +535,9 @@ const context_pack: Operation = {
       typeof p.budget_tokens === 'number' && Number.isFinite(p.budget_tokens) && p.budget_tokens > 0
         ? Math.floor(p.budget_tokens)
         : null;
+    const completion = ctx.reportFailure ? new RetrievalCompletion() : undefined;
     const res = await assembleContextPack(ctx.engine, {
+      completion,
       sourceId,
       entities,
       since,
@@ -542,6 +545,10 @@ const context_pack: Operation = {
       includePrivate,
       maxEntities: PACK_DEFAULT_MAX_ENTITIES,
     });
+    if (completion && !completion.seal().completed) {
+      ctx.reportFailure!({ code: 'unavailable' });
+      return {};
+    }
 
     let cards = res.cards ?? [];
     let facts = res.facts ?? [];
@@ -716,7 +723,9 @@ const delta: Operation = {
     const explicitSlug = typeof p.since_slug === 'string' ? p.since_slug : undefined;
     const sinceSlug = explicitSlug ?? cursorSlug;
 
+    const completion = ctx.reportFailure ? new RetrievalCompletion() : undefined;
     const res = await assembleDeltaContext(ctx.engine, {
+      completion,
       sourceId,
       since: effectiveSince,
       ...(sinceSlug !== undefined ? { sinceSlug } : {}),
@@ -725,6 +734,10 @@ const delta: Operation = {
       includePrivate,
       maxEntities: PACK_DEFAULT_MAX_ENTITIES,
     });
+    if (completion && !completion.seal().completed) {
+      ctx.reportFailure!({ code: 'unavailable' });
+      return {};
+    }
 
     // Pages arrive OLDEST first by (updated_at, slug) — no client-side dedup
     // needed; the keyset already excludes everything at/before the cursor.

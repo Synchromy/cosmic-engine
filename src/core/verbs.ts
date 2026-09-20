@@ -1,3 +1,4 @@
+import { RetrievalCompletion } from './retrieval-completion.ts';
 /**
  * MEMORY_VERBS v1 — the frozen memory protocol verbs (Cathedral 1).
  *
@@ -216,9 +217,14 @@ const entity: Operation = {
     }
     const t0 = Date.now();
     const { buildEntityCard } = await import('./verbs/entity-card.ts');
+    const completion = ctx.reportFailure ? new RetrievalCompletion() : undefined;
     const result = await buildEntityCard(ctx.engine, ctx.sourceId ?? 'default', name, {
-      remote: ctx.remote !== false,
+      remote: ctx.remote !== false, completion,
     });
+    if (completion && !completion.seal().completed) {
+      ctx.reportFailure!({ code: 'unavailable' });
+      return {};
+    }
     return {
       protocol_version: MEMORY_VERBS_VERSION,
       found: result.found,
