@@ -1,3 +1,4 @@
+import { resourcePolicyFromEnvironment } from '../core/oauth-resource-policy.ts';
 /**
  * GBrain HTTP MCP server with OAuth 2.1.
  *
@@ -896,7 +897,9 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
     dcrTtlMaxSeconds = dcrTtlMinSeconds;
   }
 
+  const resourcePolicy = resourcePolicyFromEnvironment(process.env.GBRAIN_OAUTH_RESOURCE_POLICY, publicUrl);
   const oauthProvider = new GBrainOAuthProvider({
+    resourcePolicy,
     sql,
     tokenTtl,
     dcrDisabled: !enableDcr,

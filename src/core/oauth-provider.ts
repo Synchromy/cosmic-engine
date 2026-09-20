@@ -13,6 +13,7 @@
  * - Legacy access_tokens fallback for backward compat
  */
 
+import { OAuthResourcePolicy } from './oauth-resource-policy.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Response } from 'express';
 import type {
@@ -253,6 +254,8 @@ export function coerceTimestamp(value: unknown): number | undefined {
 }
 
 interface GBrainOAuthProviderOptions {
+  /** Optional explicit logical API resource policy; absent preserves standalone compatibility. */
+  resourcePolicy?: OAuthResourcePolicy;
   sql: SqlQuery;
   /** Default token TTL in seconds (default: 3600 = 1 hour) */
   tokenTtl?: number;
@@ -575,9 +578,11 @@ export class GBrainOAuthProvider implements OAuthServerProvider {
   private readonly dcrDisabled: boolean;
   private tokenTtl: number;
   private refreshTtl: number;
+  private readonly resourcePolicy?: OAuthResourcePolicy;
 
   constructor(options: GBrainOAuthProviderOptions) {
     this.sql = options.sql;
+    this.resourcePolicy = options.resourcePolicy;
     this.dcrDisabled = options.dcrDisabled === true;
     this.tokenTtl = options.tokenTtl || 3600;
     this.refreshTtl = options.refreshTtl || 30 * 24 * 3600;
@@ -618,6 +623,7 @@ export class GBrainOAuthProvider implements OAuthServerProvider {
     params: AuthorizationParams,
     res: Response,
   ): Promise<void> {
+    this.resourcePolicy?.assertResource(params.resource, client);
     const code = generateToken('gbrain_code_');
     const codeHash = hashToken(code);
     const expiresAt = Math.floor(Date.now() / 1000) + 600; // 10 minute TTL
@@ -701,6 +707,21 @@ export class GBrainOAuthProvider implements OAuthServerProvider {
     // Use `redirectUri !== undefined` rather than truthy — an attacker
     // submitting `redirect_uri=""` (empty string) at /token would otherwise
     // hit the falsy branch and bypass the binding entirely.
+    // Validate before consuming and bind the observed resource in the DELETE.
+    // A concurrent invalid request cannot burn a valid code.
+    let boundResource: string | null = null;
+    let effectiveResource = resource;
+    if (this.resourcePolicy) {
+      const [stored] = await this.sql`
+        SELECT resource FROM oauth_codes
+        WHERE code_hash = ${codeHash} AND client_id = ${client.client_id}
+          AND expires_at > ${now}
+          AND (${redirectUri === undefined} OR redirect_uri = ${redirectUri ?? null})
+      `;
+      if (!stored) throw new InvalidGrantError('Authorization code not found or expired');
+      boundResource = (stored.resource as string | null) ?? null;
+      effectiveResource = this.resourcePolicy.exchangeResource(boundResource, resource, client);
+    }
     const rows = redirectUri !== undefined
       ? await this.sql`
           DELETE FROM oauth_codes
@@ -708,6 +729,7 @@ export class GBrainOAuthProvider implements OAuthServerProvider {
             AND client_id = ${client.client_id}
             AND redirect_uri = ${redirectUri}
             AND expires_at > ${now}
+            AND (${!this.resourcePolicy} OR resource IS NOT DISTINCT FROM ${boundResource})
           RETURNING client_id, scopes, resource
         `
       : await this.sql`
@@ -715,6 +737,7 @@ export class GBrainOAuthProvider implements OAuthServerProvider {
           WHERE code_hash = ${codeHash}
             AND client_id = ${client.client_id}
             AND expires_at > ${now}
+            AND (${!this.resourcePolicy} OR resource IS NOT DISTINCT FROM ${boundResource})
           RETURNING client_id, scopes, resource
         `;
     if (rows.length === 0) throw new Error('Authorization code not found or expired');
@@ -723,7 +746,7 @@ export class GBrainOAuthProvider implements OAuthServerProvider {
 
     // Issue tokens
     const scopes = (codeRow.scopes as string[]) || [];
-    return this.issueTokens(client.client_id, scopes, resource, true);
+    return this.issueTokens(client.client_id, scopes, effectiveResource, true);
   }
 
   // -------------------------------------------------------------------------
@@ -747,11 +770,24 @@ export class GBrainOAuthProvider implements OAuthServerProvider {
     // legitimate client. With the predicate in the DELETE, wrong-client
     // attempts get zero rows back; the legitimate client retains the row
     // for one valid rotation.
+    let boundResource: string | null = null;
+    let effectiveResource = resource;
+    if (this.resourcePolicy) {
+      const [stored] = await this.sql`
+        SELECT resource FROM oauth_tokens
+        WHERE token_hash = ${tokenHash} AND token_type = 'refresh'
+          AND client_id = ${client.client_id}
+      `;
+      if (!stored) throw new InvalidGrantError('Refresh token not found');
+      boundResource = (stored.resource as string | null) ?? null;
+      effectiveResource = this.resourcePolicy.exchangeResource(boundResource, resource, client);
+    }
     const rows = await this.sql`
       DELETE FROM oauth_tokens
       WHERE token_hash = ${tokenHash}
         AND token_type = 'refresh'
         AND client_id = ${client.client_id}
+        AND (${!this.resourcePolicy} OR resource IS NOT DISTINCT FROM ${boundResource})
       RETURNING client_id, scopes, expires_at
     `;
     // #4532: InvalidGrantError (not bare Error) — the SDK's token handler maps
@@ -787,7 +823,7 @@ export class GBrainOAuthProvider implements OAuthServerProvider {
       throw new Error('Requested scope exceeds refresh token grant');
     }
     const tokenScopes = scopes ?? grantedScopes;
-    return this.issueTokens(client.client_id, tokenScopes, resource, true);
+    return this.issueTokens(client.client_id, tokenScopes, effectiveResource, true);
   }
 
   // -------------------------------------------------------------------------
@@ -894,6 +930,16 @@ export class GBrainOAuthProvider implements OAuthServerProvider {
     }
 
     if (oauthRows.length > 0) {
+      if (this.resourcePolicy) {
+        const client = await this._clientsStore.getClient(oauthRows[0].client_id as string);
+        if (!client) throw new InvalidTokenError('Token client not found');
+        try {
+          this.resourcePolicy.assertResource(oauthRows[0].resource as string | null, client);
+        } catch {
+          throw new InvalidTokenError('Token resource is not accepted by this API');
+        }
+      }
+
       const row = oauthRows[0];
       // NULL expires_at is treated as expired (fail-closed). Schema permits NULL,
       // and the SDK's bearerAuth requires `typeof expiresAt === 'number'` — we
@@ -972,6 +1018,10 @@ export class GBrainOAuthProvider implements OAuthServerProvider {
         ...(rowSurface !== undefined ? { surface: rowSurface } : {}),
         ...(rowSurfaceSetBy !== undefined ? { surfaceSetBy: rowSurfaceSetBy } : {}),
       } as CoreAuthInfo as SdkAuthInfo;
+    }
+
+    if (this.resourcePolicy && !this.resourcePolicy.allowLegacyAccessTokens) {
+      throw new InvalidTokenError('Legacy access tokens are disabled by resource policy');
     }
 
     // Fallback: legacy access_tokens table (backward compat). Modern legacy
@@ -1511,6 +1561,11 @@ export class GBrainOAuthProvider implements OAuthServerProvider {
     resource: URL | undefined,
     includeRefresh: boolean,
   ): Promise<OAuthTokens> {
+    if (this.resourcePolicy) {
+      const client = await this._clientsStore.getClient(clientId);
+      if (!client) throw new InvalidTokenError('Token client not found');
+      this.resourcePolicy.assertResource(resource, client);
+    }
     const accessToken = generateToken('gbrain_at_');
     const accessHash = hashToken(accessToken);
     const now = Math.floor(Date.now() / 1000);
