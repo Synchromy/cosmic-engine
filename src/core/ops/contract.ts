@@ -1,3 +1,4 @@
+import type { PageReadTarget } from '../page-read-identity.ts';
 /**
  * Foundation contract for the operations layer (pure move from
  * src/core/operations.ts): the error envelope (ErrorCode / OperationError /
@@ -249,6 +250,9 @@ export interface AuthInfo {
 }
 
 export interface OperationContext {
+  /** Host-owned admission, never copied from caller params. Refusal throws.
+   * Runs after authorized resolution and before any body or retrieval stamp. */
+  beforePageRead?: (target: PageReadTarget) => Promise<void>;
   engine: BrainEngine;
   config: GBrainConfig;
   logger: Logger;

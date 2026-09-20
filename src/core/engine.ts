@@ -1,3 +1,4 @@
+import type { PageReadIdentity } from './page-read-identity.ts';
 import type {
   Page, PageInput, PageFilters, GetPageOpts, PageReadScope, PageReadPolicy,
   Chunk, ChunkInput, StaleChunkRow, StalePageRow, ChunklessPageRow,
@@ -768,6 +769,8 @@ export interface BrainEngine {
    * by `restore_page` flow, and by operator diagnostics.
    */
   getPage(slug: string, opts?: GetPageOpts): Promise<Page | null>;
+  /** Same scoped winner as getPage, without loading its body. */
+  getPageIdentity(slug: string, opts?: GetPageOpts): Promise<PageReadIdentity | null>;
   /**
    * Insert or update a page. When `opts.sourceId` is omitted, the row is
    * written under the schema DEFAULT ('default'). When provided, `source_id`

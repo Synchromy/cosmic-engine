@@ -78,3 +78,10 @@ active/stalled recovery (including orphaned-parent bookkeeping) may finish.
 TTL and lease ages continue; expired waiting work can be cancelled after
 resumption. Inline dream drains and unguarded direct writers remain outside
 coverage. Policy reads and database claims do not form an atomic barrier.
+
+`feat/authorized-page-read-preflight-0921` adds generic metadata-only page
+resolution and optional host-owned admission before get_page/fetch content reads.
+Final SQL binds the expected page identity; restore/source/privacy semantics
+remain as before. No accounting, transport bootstrap, upstream PR, release or
+activation exists in this slice. Ordinary successful reads add one metadata
+query even without a callback.

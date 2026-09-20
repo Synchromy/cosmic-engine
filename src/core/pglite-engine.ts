@@ -1,3 +1,5 @@
+import { readPageIdentity, type PageReadIdentity } from './page-read-identity.ts';
+import type { GetPageOpts } from './types.ts';
 import type { PageReadScope } from './types.ts';
 import type { PageReadPolicy } from './types.ts';
 import { readRelationalFanout, readAliases, readBacklinkCounts, readAdjacencyBoosts, readContentFlags, readExtractionStates, readEffectiveDates, readSalienceScores } from './search/read-enrichment.ts';
@@ -1665,7 +1667,12 @@ export class PGLiteEngine implements BrainEngine {
   }
 
   // Pages CRUD
-  async getPage(slug: string, opts?: { sourceId?: string; sourceIds?: string[]; includeDeleted?: boolean; excludePrivate?: boolean }): Promise<Page | null> {
+  async getPageIdentity(slug: string, opts?: GetPageOpts): Promise<PageReadIdentity | null> {
+    return readPageIdentity(async (text, values) =>
+      (await this.db.query<Record<string, unknown>>(text, values)).rows, slug, opts);
+  }
+
+  async getPage(slug: string, opts?: GetPageOpts): Promise<Page | null> {
     // v0.26.5: hide soft-deleted by default; opt-in via opts.includeDeleted.
     const includeDeleted = opts?.includeDeleted === true;
     const sourceId = opts?.sourceId;
@@ -1673,6 +1680,10 @@ export class PGLiteEngine implements BrainEngine {
     const where: string[] = ['slug = $1'];
     if (opts?.excludePrivate) where.push(privatePagesFilterFragment('pages'));
     const params: unknown[] = [slug];
+    if (opts?.expectedPageId !== undefined) {
+      params.push(opts.expectedPageId);
+      where.push(`id = $${params.length}`);
+    }
     // #1393: federated grant (sourceIds[]) wins over scalar sourceId so the
     // exact-match read honors allowedSources, not just one source.
     if (sourceIds && sourceIds.length > 0) {

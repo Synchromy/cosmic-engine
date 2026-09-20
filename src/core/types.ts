@@ -393,6 +393,8 @@ export interface PageReadPolicy extends PageReadScope {
 }
 
 export interface GetPageOpts extends PageReadScope {
+  /** Internal admission binding: never substitute a new row at the same slug. */
+  expectedPageId?: number;
   /** Filter to a specific source. When omitted, getPage returns the first slug match across sources (pre-existing semantics). */
   sourceId?: string;
   /**

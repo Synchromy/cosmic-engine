@@ -1,3 +1,5 @@
+import type { BrainEngine } from '../engine.ts';
+import { readGetPage, readFetchPage } from './page-read-target.ts';
 /**
  * Page CRUD operation cluster — pure move from operations.ts (v0.46.x
  * tranche 1). Op consts stay module-private; `pagesOperations` below lists
@@ -7,7 +9,6 @@
  * (cycle); shared contract/context helpers come from the ops/ foundation.
  */
 
-import type { BrainEngine } from '../engine.ts';
 import { clampSearchLimit } from '../engine.ts';
 import type { Page, PageType } from '../types.ts';
 import { importFromContent } from '../import-file.ts';
@@ -23,7 +24,7 @@ import { sanitizeRemoteBody } from '../remote-body.ts';
 import type { WriterLintPayload } from '../output/post-write.ts';
 import { getContentFlag } from '../quarantine.ts';
 import { bumpLastRetrievedAt } from '../last-retrieved.ts';
-import { resolveExcludePrivatePages, isPrivatePage, findPrivateOnlySlugs } from '../search/private-visibility.ts';
+import { resolveExcludePrivatePages, isPrivatePage } from '../search/private-visibility.ts';
 import { LIST_PAGES_DESCRIPTION, CAPTURE_DESCRIPTION } from '../operations-descriptions.ts';
 import { OperationError } from './contract.ts';
 import type { Operation, OperationContext } from './contract.ts';
@@ -40,26 +41,6 @@ import {
 } from './context.ts';
 
 // --- Page CRUD ---
-
-/**
- * #4352 remediation — filter fuzzy-resolution candidates so get_page's
- * ambiguous_slug candidate list can't enumerate private slugs to an
- * untrusted caller. Probe SQL lives ONCE in findPrivateOnlySlugs (a slug
- * with at least one non-private in-scope page stays visible; candidates
- * come from resolveSlugs, so every slug has a live page row).
- * Order-preserving (resolveSlugs returns ranked candidates). Read-only,
- * scope-threaded — not a getPage/putPage pair (no unscoped-check/scoped-write
- * hazard).
- */
-async function dropPrivateSlugs(
-  engine: BrainEngine,
-  candidates: string[],
-  scope: { sourceId?: string; sourceIds?: string[] },
-  includeDeleted: boolean,
-): Promise<string[]> {
-  const hidden = await findPrivateOnlySlugs(engine, candidates, scope, { includeDeleted });
-  return candidates.filter(c => !hidden.has(c));
-}
 
 /**
  * #3625: strip the takes/private-facts fences from BOTH compiled_truth and
@@ -86,115 +67,10 @@ const get_page: Operation = {
     source_id: { type: 'string', description: "#4329: scope the lookup to a single source (a multi-source brain can hold the same slug in several sources). Defaults to ctx.sourceId / the caller's grant. '__all__' spans every source for trusted local callers, your granted sources for remote callers." },
   },
   handler: async (ctx, p) => {
-    const slug = p.slug as string;
-    const fuzzy = (p.fuzzy as boolean) || false;
-    const includeDeleted = (p.include_deleted as boolean) === true;
-    const includeContent = (p.include_content as boolean) === true;
-    // #4329: honor a per-call source_id (pre-fix it was silently dropped).
-    // resolveRequestedScope (inside federatedSearchScope) enforces the remote
-    // caller's grant on the explicit value.
-    const sourceIdParam = parseSourceIdParam(p.source_id, 'get_page', { allowAll: true });
-    // #1393: route BOTH the exact-match read and the fuzzy resolveSlugs through
-    // the canonical precedence ladder (federated array > scalar > nothing). The
-    // exact path previously used scalar `ctx.sourceId` only, so a remote client
-    // with a federated `allowedSources` grant (and no single ctx.sourceId) got
-    // an UNSCOPED exact lookup — a cross-source read of any page by slug. getPage
-    // now honors sourceIds[] (both engines), so the same scope closes both paths.
-    // #3242: federatedSearchScope (not bare sourceScopeOpts) so an unqualified
-    // read sees pages in `federated: true` sources, matching search/query.
-    const sourceOpts = federatedSearchScope(ctx, sourceIdParam);
-    // #4620: an explicit source_id must name a live source (after the grant check).
-    await assertExplicitSourceLive(ctx, sourceIdParam);
-    const fuzzyScope = sourceOpts;
-
-    // #4352 remediation: untrusted callers never read `visibility: private`
-    // bodies — the same resolveExcludePrivatePages gate search/recall/entity
-    // already apply (trusted local + the operator opt-outs resolve to false).
-    // A gated private page behaves exactly like a missing one (no existence
-    // oracle), composing with — not replacing — the source-grant scope above.
-    const excludePrivate = await resolveExcludePrivatePages(ctx.engine, ctx.remote);
-
-    let page = await ctx.engine.getPage(slug, { includeDeleted, excludePrivate, ...sourceOpts });
-    if (page && excludePrivate && isPrivatePage(page.frontmatter)) page = null;
-    let resolved_slug: string | undefined;
-
-    // #4275: slug aliases are redirects — dedup/migration retires a slug and
-    // registers alias → canonical. Search and the wikilink resolver already
-    // follow them (resolveSlugWithAlias documents get_page as a consumer);
-    // the direct exact read 404ing on a retired slug made the surfaces
-    // disagree. Resolution runs ONLY on an exact-read miss, so a live page at
-    // the requested slug (or, with include_deleted, its recoverable shell —
-    // restore workflows need the shell, not a redirect) always wins, and it
-    // runs BEFORE fuzzy (the alias table is authoritative; fuzzy is a guess).
-    // Scope: federated grants consult only granted sources' alias rows, so an
-    // out-of-grant alias behaves exactly like a missing page; a scalar scope
-    // consults that source (the remote '__all__' literal matches no real
-    // source and fail-closes); the trusted UNSCOPED read consults every LIVE
-    // source (archived sources are excluded everywhere else in the ladder; their
-    // alias rows count only when include_deleted asks for retired material).
-    // The canonical is then read in the source that OWNS the alias row: a
-    // federated getPage prefers the anchor source, so an unrelated live page at
-    // the canonical slug in another granted source would otherwise shadow it.
-    // No catch here: a pre-v104 brain (no slug_aliases table) is the ENGINE's
-    // contract to absorb (resolveSlugWithAliasDetailed → null); anything else
-    // (connection reset, timeout) must surface, not degrade to page_not_found.
-    if (!page) {
-      const aliasScope: string | readonly string[] = sourceOpts.sourceIds?.length
-        ? sourceOpts.sourceIds
-        : sourceOpts.sourceId !== undefined
-          ? sourceOpts.sourceId
-          : (await ctx.engine.listAllSources({ includeArchived: includeDeleted })).map(s => s.id);
-      const hit = await ctx.engine.resolveSlugWithAliasDetailed(slug, aliasScope, { excludePrivate });
-      if (hit) {
-        const aliasPage = await ctx.engine.getPage(hit.canonical_slug, { includeDeleted, excludePrivate, sourceId: hit.source_id });
-        if (aliasPage && !(excludePrivate && isPrivatePage(aliasPage.frontmatter))) {
-          page = aliasPage;
-          resolved_slug = hit.canonical_slug;
-        }
-      }
-    }
-
-    if (!page && fuzzy) {
-      let candidates = await ctx.engine.resolveSlugs(slug, { ...fuzzyScope, excludePrivate });
-      // #4352: the ambiguous_slug candidate list must not enumerate private slugs.
-      if (excludePrivate && candidates.length > 0) {
-        candidates = await dropPrivateSlugs(ctx.engine, candidates, fuzzyScope, includeDeleted);
-      }
-      if (candidates.length === 1) {
-        const fuzzyPage = await ctx.engine.getPage(candidates[0], { includeDeleted, excludePrivate, ...sourceOpts });
-        // Multi-source backstop: the slug may still resolve to a private
-        // variant (same slug private in one source, world in another —
-        // getPage returns the first in-scope match).
-        if (fuzzyPage && !(excludePrivate && isPrivatePage(fuzzyPage.frontmatter))) {
-          page = fuzzyPage;
-          resolved_slug = candidates[0];
-        }
-      } else if (candidates.length > 1) {
-        return { error: 'ambiguous_slug', candidates };
-      }
-    }
-
-    if (!page) {
-      let hint = includeDeleted ? 'Check the slug or use fuzzy: true' : 'Page may be soft-deleted; pass include_deleted: true to verify';
-      // #4516: source scoping is by-design isolation, but the miss diagnostic
-      // should say WHERE the slug actually lives. Trusted local callers only
-      // (`ctx.remote === false`) — for a remote caller the probe would be a
-      // cross-source existence oracle outside its grant. Only when the lookup
-      // was actually scoped (an unscoped read already spanned every source).
-      if (ctx.remote === false && (sourceOpts.sourceId !== undefined || sourceOpts.sourceIds !== undefined)) {
-        try {
-          // gbrain-allow-unscoped-getpage: read-only diagnostic existence probe —
-          // deliberately spans all sources to name where the slug lives.
-          const elsewhere = await ctx.engine.getPage(slug, { includeDeleted });
-          if (elsewhere && !(excludePrivate && isPrivatePage(elsewhere.frontmatter))) {
-            hint = `Page exists in source '${elsewhere.source_id}' — pass --source ${elsewhere.source_id} (source_id: '${elsewhere.source_id}' over MCP). ${hint}`;
-          }
-        } catch {
-          // Diagnostic only — a probe failure must never mask the real error.
-        }
-      }
-      throw new OperationError('page_not_found', `Page not found: ${slug}`, hint);
-    }
+    const read = await readGetPage(ctx, p);
+    if ('error' in read) return read;
+    const { page, resolved_slug } = read;
+    const includeContent = p.include_content === true;
 
     // v0.37.0 (D11): op-layer write-back for the `last_retrieved_at` stale
     // signal. Fire-and-forget — caller does NOT await. Internal callers
@@ -272,25 +148,7 @@ const fetch_page: Operation = {
     id: { type: 'string', required: true, description: 'Result id from a prior `search` call (= the page slug).' },
   },
   handler: async (ctx, p) => {
-    const id = p.id as string;
-    if (typeof id !== 'string' || !id.trim()) {
-      throw new OperationError('invalid_params', 'fetch requires a non-empty id', 'Pass the `id` field from a `search` result.');
-    }
-    const slug = id.trim();
-    // Same scope ladder as get_page's unqualified read: federated array >
-    // scalar > nothing — a remote caller only fetches what its grant spans.
-    const sourceOpts = federatedSearchScope(ctx);
-    let page = await ctx.engine.getPage(slug, sourceOpts);
-    // #4352 remediation: a `visibility: private` page reads as missing for
-    // untrusted callers (same resolveExcludePrivatePages gate as get_page —
-    // fetch is remote-facing by design, every MCP transport). Cheap row
-    // check first; the resolver short-circuits for trusted local callers.
-    if (page && isPrivatePage(page.frontmatter) && (await resolveExcludePrivatePages(ctx.engine, ctx.remote))) {
-      page = null;
-    }
-    if (!page) {
-      throw new OperationError('page_not_found', `Page not found: ${slug}`, 'Pass an id returned by a `search` call.');
-    }
+    const page = await readFetchPage(ctx, p);
     bumpLastRetrievedAt(ctx.engine, [page.id]);
     const tags = await ctx.engine.getTags(page.slug, { sourceId: page.source_id });
     // Same privacy boundary as get_page: untrusted readers (ctx.remote ===
