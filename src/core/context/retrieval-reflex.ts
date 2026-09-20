@@ -1,3 +1,4 @@
+import { RetrievalCompletion } from '../retrieval-completion.ts';
 /**
  * Retrieval Reflex — resolver core (issue #1981, Layer 1).
  *
@@ -102,6 +103,8 @@ export interface PointerBlock {
 }
 
 export interface ResolvePointersOpts {
+  /** Trusted accepted retrieval evidence; never copied from caller params. */
+  completion?: RetrievalCompletion;
   maxPointers?: number;
   /**
    * Joined text of PRIOR turns + already-loaded page bodies (NOT the current
@@ -162,6 +165,11 @@ export async function resolveEntitiesToPointers(
   opts: ResolvePointersOpts = {},
 ): Promise<PointerBlock | null> {
   if (!candidates.length) return null;
+  const completion = opts.completion ? new RetrievalCompletion() : undefined;
+  const finish = (result: PointerBlock | null): PointerBlock | null => {
+    if (completion) opts.completion!.accept(completion.seal());
+    return result;
+  };
   const maxPointers = opts.maxPointers ?? DEFAULT_MAX_POINTERS;
   const priorLc = (opts.priorContextText ?? '').toLowerCase();
 
@@ -229,7 +237,7 @@ export async function resolveEntitiesToPointers(
       }
     }
   }
-  if (!aliasNorms.length) return null;
+  if (!aliasNorms.length) { completion?.complete(); return finish(null); }
 
   // Federated scope (v0.43 #2095): explicit sourceIds win over the scalar.
   const sourceIds = opts.sourceIds?.length ? opts.sourceIds : [sourceId];
@@ -306,7 +314,12 @@ export async function resolveEntitiesToPointers(
   for (let i = 0; i < sourceIds.length; i++) {
     for (const norm of aliasNorms) {
       if (weakNorms.has(norm)) continue; // weak norms fold below (stricter rule)
-      const hits = liveHitsFor(aliasResults[i], sourceIds[i], norm);
+      const lookup = aliasResults[i];
+      const hits = liveHitsFor(lookup, sourceIds[i], norm);
+      if (lookup.status === 'fulfilled') {
+        const raw = lookup.value.get(norm) ?? [];
+        if (!raw.length || (liveCheckOk && hits.length !== 1)) completion?.complete();
+      }
       if (hits.length === 1) push(hits[0].slug, sourceIds[i], 'alias', norm);
     }
   }
@@ -326,6 +339,7 @@ export async function resolveEntitiesToPointers(
         }
       }
       if (all.length === 1) push(all[0].slug, all[0].source_id, 'alias', norm);
+      else completion?.complete();
     }
   }
 
@@ -334,6 +348,8 @@ export async function resolveEntitiesToPointers(
   // so a plain slug = ANY() misses. Match lower(title) exactly or the slug suffix.
   let rows: PageRow[] = [];
   const useSurnameArm = surnamePatterns.length > 0;
+  const exactApplicable = titlesLc.length > 0 || exactSlugs.length > 0 || slugSuffixes.length > 0 || useSurnameArm;
+  let exactCompleted = false;
   try {
     // The surname predicate rides the SAME query when armed: person pages
     // whose lower(title) ends with " <token>". Patterns are pre-escaped for
@@ -361,6 +377,7 @@ export async function resolveEntitiesToPointers(
              OR slug LIKE ANY($4::text[]) )`,
           [sourceIds, titlesLc, exactSlugs, slugSuffixes],
         );
+    exactCompleted = exactApplicable;
   } catch {
     rows = [];
   }
@@ -377,6 +394,7 @@ export async function resolveEntitiesToPointers(
         [sourceIds, aliasOnly.map((p) => p.slug)],
       );
       for (const r of extra) rowByKey.set(keyOf(r.source_id, r.slug), r);
+      completion?.complete();
     } catch {
       /* ignore — alias slug may be stale */
     }
@@ -441,6 +459,8 @@ export async function resolveEntitiesToPointers(
     }
   }
 
+  if (exactCompleted) completion?.complete();
+
   // Arm 2.5 — pure-CJK weak exact-title/exact-slug (#3746, 'cjk-title').
   // CJK weak n-grams may probe EXACT title/slug equality on top of the alias
   // arm: slugify() strips CJK so the generic slug arm can never fire, and CJK
@@ -477,6 +497,7 @@ export async function resolveEntitiesToPointers(
         for (const [n, hits] of cjkHits) {
           if (hits.length === 1) push(hits[0].slug, hits[0].source_id, 'cjk-title', n);
         }
+        completion?.complete();
       } catch {
         /* fail-open — the alias arm already ran */
       }
@@ -507,8 +528,8 @@ export async function resolveEntitiesToPointers(
     if (pointers.length >= maxPointers) break;
   }
 
-  if (!pointers.length) return null;
-  return { pointers, text: renderPointerBlock(pointers) };
+  if (!pointers.length) return finish(null);
+  return finish({ pointers, text: renderPointerBlock(pointers) });
 }
 
 /** Recover a display label: prefer the matched candidate surface, else the page title. */

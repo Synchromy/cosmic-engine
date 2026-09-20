@@ -1,3 +1,4 @@
+import { RetrievalCompletion } from '../retrieval-completion.ts';
 /**
  * v0.43 (#2095) — push-based context: the brain VOLUNTEERS relevant pages
  * from a rolling conversation window instead of waiting to be asked.
@@ -56,6 +57,8 @@ export interface VolunteeredPage {
 }
 
 export interface VolunteerOpts {
+  /** Trusted outer selection outcome. */
+  completion?: RetrievalCompletion;
   /** Resolved source scope (federated array > scalar — sourceScopeOpts shape). */
   sourceIds: string[];
   /** Prior context (already-surfaced pointers/pages) for slug-only suppression. */
@@ -277,11 +280,14 @@ export async function volunteerContext(
   turns: WindowTurn[],
   opts: VolunteerOpts,
 ): Promise<VolunteeredPage[]> {
-  if (!turns.length || !opts.sourceIds?.length) return [];
+  if (!opts.sourceIds?.length) return [];
   const candidates = extractCandidatesFromWindow(turns);
-  return volunteerStage(
+  if (!candidates.length) { opts.completion?.complete(); return []; }
+  const completion = opts.completion ? new RetrievalCompletion() : undefined;
+  const pages = await volunteerStage(
     (cands, ropts) =>
       resolveEntitiesToPointers(engine, opts.sourceIds[0], cands, {
+        completion,
         sourceIds: opts.sourceIds,
         priorContextText: ropts.priorContextText,
         suppression: ropts.suppression,
@@ -298,6 +304,8 @@ export async function volunteerContext(
       minConfidence: opts.minConfidence,
     },
   );
+  if (completion) opts.completion!.accept(completion.seal());
+  return pages;
 }
 
 /**
@@ -346,7 +354,9 @@ export async function volunteerUsageStats(
   engine: BrainEngine,
   sourceIds: string[],
   days = 30,
+  completion?: RetrievalCompletion,
 ): Promise<VolunteerUsageStats> {
+  let completed = false;
   const safeDays = Number.isFinite(days) && days > 0 ? Math.floor(days) : 30;
   let rows: Array<{ match_arm: string; channel: string; volunteered: string | number; used: string | number }> = [];
   try {
@@ -363,6 +373,7 @@ export async function volunteerUsageStats(
         ORDER BY e.match_arm, e.channel`,
       [sourceIds, String(safeDays)],
     );
+    completed = true;
   } catch {
     rows = []; // pre-v117 brain — table doesn't exist yet
   }
@@ -377,7 +388,7 @@ export async function volunteerUsageStats(
       precision: volunteered > 0 ? Number((used / volunteered).toFixed(3)) : 0,
     };
   });
-  return {
+  const result: VolunteerUsageStats = {
     days: safeDays,
     approximate: true,
     note: VOLUNTEER_STATS_NOTE,
@@ -385,4 +396,6 @@ export async function volunteerUsageStats(
     total_used: by_arm.reduce((s, a) => s + a.used, 0),
     by_arm,
   };
+  if (completed) completion?.complete();
+  return result;
 }

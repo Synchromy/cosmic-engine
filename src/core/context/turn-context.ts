@@ -136,7 +136,7 @@ export interface TurnContextResult {
 }
 
 export interface AssembleTurnContextOpts {
-  /** Trusted pack/delta outcome only; turn-mode completion is not yet supported. */
+  /** Trusted accepted outcome for the selected assembly mode. */
   completion?: RetrievalCompletion;
   sourceId: string;
   /** Recent turns, oldest → newest. Optional for pack/delta (may run cold). */
@@ -203,6 +203,7 @@ export async function assembleTurnContext(
   if (mode === 'pack') return assemblePack(engine, opts);
   if (mode === 'delta') return assembleDelta(engine, opts);
 
+  const completion = opts.completion ? new RetrievalCompletion() : undefined;
   const maxBytes =
     typeof opts.maxBytes === 'number' && Number.isFinite(opts.maxBytes) && opts.maxBytes > 0
       ? Math.floor(opts.maxBytes)
@@ -226,14 +227,17 @@ export async function assembleTurnContext(
     try {
       const candidates = extractCandidatesFromWindow(window);
       if (candidates.length) {
+        const child = completion ? new RetrievalCompletion() : undefined;
         const block = await resolveEntitiesToPointers(engine, opts.sourceId, candidates, {
+          completion: child,
           priorContextText: opts.priorContextText,
           suppression: 'slug-only',
           maxPointers: DEFAULT_MAX_POINTERS,
           lexicalArms: opts.lexicalArms,
         });
         pointers = block?.pointers ?? [];
-      }
+        if (child) completion!.accept(child.seal());
+      } else if (window.length) completion?.complete();
     } catch {
       pointers = [];
     }
@@ -244,7 +248,9 @@ export async function assembleTurnContext(
     try {
       if (window.length) {
         const excludeSlugs = new Set(pointers.map((p) => p.slug));
+        const child = completion ? new RetrievalCompletion() : undefined;
         volunteered = await volunteerContext(engine, window, {
+          completion: child,
           sourceIds: [opts.sourceId],
           priorContext: opts.priorContextText,
           excludeSlugs,
@@ -253,6 +259,7 @@ export async function assembleTurnContext(
           // pointer arm above (ResolvePointersOpts.lexicalArms).
           lexicalArms: opts.lexicalArms,
         });
+        if (child) completion!.accept(child.seal());
       }
     } catch {
       volunteered = [];
@@ -264,6 +271,7 @@ export async function assembleTurnContext(
   //    remote: true is the load-bearing bit [S3#1]: it pins the meta-hook's
   //    visibility tier to ['world'] so a private fact can NEVER cross the IPC
   //    boundary, exactly matching what a remote MCP caller would see.
+  const factsCompletion = completion ? new RetrievalCompletion() : undefined;
   const factsArm = (async (): Promise<TurnContextFact[]> => {
     try {
       const metaCtx: OperationContext = {
@@ -278,13 +286,16 @@ export async function assembleTurnContext(
       };
       const meta = await getBrainHotMemoryMeta('turn_context', metaCtx);
       const hot = meta?.brain_hot_memory as { facts?: TurnContextFact[] } | undefined;
-      return Array.isArray(hot?.facts) ? [...hot.facts] : [];
+      const facts = Array.isArray(hot?.facts) ? [...hot.facts] : [];
+      factsCompletion?.complete();
+      return facts;
     } catch {
       return [];
     }
   })();
 
   const [{ pointers, volunteered }, facts] = await Promise.all([pointersVolunteerArm, factsArm]);
+  if (factsCompletion) completion!.accept(factsCompletion.seal());
 
   // 4. Render + budget [ENG-1]: trim facts first, then volunteered pages,
   //    then pointers — always lowest-confidence first.
@@ -308,7 +319,7 @@ export async function assembleTurnContext(
     if (byteLen(text) > maxBytes) text = '';
   }
 
-  return {
+  const result: TurnContextResult = {
     text,
     pointers,
     // Post-trim survivors: budget trimming mutates these arrays in place, so
@@ -318,6 +329,8 @@ export async function assembleTurnContext(
     factsCount: facts.length,
     ...(degradedReason ? { degradedReason } : {}),
   };
+  if (completion) opts.completion!.accept(completion.seal());
+  return result;
 }
 
 function byteLen(s: string): number {

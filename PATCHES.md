@@ -109,3 +109,7 @@ Optional trusted completion follows accepted entity-card lookup/hydration and pa
 ## Local think retrieval completion
 
 Optional trusted evidence follows accepted gather stream results and processed trajectory winners into think/synthesize. Discarded temporal floor results and timed-out trajectories cannot supply completion. Failed think remains withheld under the configured lifecycle; synthesize preserves its existing accepted extractive fallback. Standalone behavior, source/privacy scope, calibration and model policy stay unchanged. Volunteer/reflex/ordinary turn, cursor effects and host/composite integration remain activation prerequisites. Local-only; no upstream PR, release or paid activation.
+
+## Local volunteer and ordinary turn completion
+
+Trusted evidence follows applicable resolver queries, global weak-alias liveness, required body hydration, accepted volunteer selection and actual statistics. A weak-only no-op title query cannot hide a failed alias arm. Ordinary turn retains Promise.all and publishes only with its final processed result; a caller's sealed discarded outcome ignores late publication. Standalone/source/privacy/telemetry behavior is unchanged. Stateful cursor effects and host/composite integration remain activation prerequisites. Local-only, no upstream PR, release or paid activation.
