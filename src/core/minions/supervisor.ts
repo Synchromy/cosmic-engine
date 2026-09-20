@@ -1,3 +1,4 @@
+import { allowsMutation } from '../mutation-policy.ts';
 /**
  * MinionSupervisor — Process manager for the Minion worker.
  *
@@ -414,12 +415,15 @@ async function probeQueueStateInner(
   }
 
   const workerAlive = supervisorLive || registeredWorker || sig.activeHealthy > 0;
-  const paused = existsSync(autopilotPausedMarkerPath());
+  const migrationPaused = existsSync(autopilotPausedMarkerPath());
+  const policyPaused = !allowsMutation();
+  const paused = migrationPaused || policyPaused;
 
   // Same operator knob the doctor's queue_health depth check reads.
   const threshold = resolveEnvNumber('GBRAIN_QUEUE_WAITING_THRESHOLD', 10);
   const warnings: string[] = [];
-  if (paused) {
+  if (policyPaused) warnings.push('host policy paused mutation admission — job will not start until it allows writes');
+  if (migrationPaused) {
     warnings.push('system paused for migration — job will not start until the pause clears');
   }
   if (!workerAlive) {
@@ -857,6 +861,8 @@ export class MinionSupervisor {
   }
 
   private async reconcileOrphanedPrivateQueuesBeforeWorkerSpawn(): Promise<void> {
+    // This recovery cancels waiting rows; defer it until writes are admitted.
+    if (!allowsMutation()) return;
     try {
       // 30s bound: a hanging DB call here would otherwise block EVERY worker
       // respawn indefinitely (the hook is awaited in the supervise loop with
@@ -1223,6 +1229,9 @@ export class MinionSupervisor {
    * F9 guard: skip if a previous check is still in flight (hung DB
    * connection shouldn't stack duplicate checks).
    */
+  private mutationPolicyPaused = false;
+  private mutationPolicyResumedAt = 0;
+
   private async healthCheck(): Promise<void> {
     if (this.healthInFlight) return;
     this.healthInFlight = true;
@@ -1239,11 +1248,15 @@ export class MinionSupervisor {
       const waitingClaimableCount = sig.waitingClaimable;
 
       const now = Date.now();
+      const policyPaused = !allowsMutation();
+      if (this.mutationPolicyPaused && !policyPaused) this.mutationPolicyResumedAt = now;
+      this.mutationPolicyPaused = policyPaused;
+      const progressAt = (date: Date) => Math.max(date.getTime(), this.mutationPolicyResumedAt);
       const minutesSinceCompletion = sig.lastCompleted
-        ? Math.round((now - sig.lastCompleted.getTime()) / 60_000)
+        ? Math.round((now - progressAt(sig.lastCompleted)) / 60_000)
         : null;
       const minutesSinceClaimable = sig.lastCompletedClaimable
-        ? Math.round((now - sig.lastCompletedClaimable.getTime()) / 60_000)
+        ? Math.round((now - progressAt(sig.lastCompletedClaimable)) / 60_000)
         : null;
 
       // F2 (per-threshold warns) — each is a distinct health_warn with reason.
@@ -1255,7 +1268,7 @@ export class MinionSupervisor {
         });
       }
 
-      if (waitingCount > 0 && minutesSinceCompletion !== null && minutesSinceCompletion > 30) {
+      if (!policyPaused && waitingCount > 0 && minutesSinceCompletion !== null && minutesSinceCompletion > 30) {
         this.emit('health_warn', {
           reason: 'no_recent_completions',
           waiting_count: waitingCount,
@@ -1290,10 +1303,12 @@ export class MinionSupervisor {
       //   - startup grace: a freshly (re)spawned worker gets a fair claim
       //     window before the wedge clock applies (Codex #9/#10).
       const childAgeMs = this.childStartedAt !== null ? now - this.childStartedAt : 0;
-      const pastStartupGrace = childAgeMs > this.opts.startupGraceMs;
+      const pastStartupGrace = childAgeMs > this.opts.startupGraceMs &&
+        (!this.mutationPolicyResumedAt || now - this.mutationPolicyResumedAt > this.opts.startupGraceMs);
       const claimableStale =
         minutesSinceClaimable === null || minutesSinceClaimable > this.opts.wedgeRestartMinutes;
       const wedged =
+        !policyPaused &&
         this.opts.wedgeRestartMinutes > 0 &&
         waitingClaimableCount > 0 &&
         activeHealthyCount === 0 &&

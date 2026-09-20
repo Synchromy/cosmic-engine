@@ -35,6 +35,7 @@ import type { BrainEngine } from '../core/engine.ts';
 import { loadConfig, isThinClient } from '../core/config.ts';
 import { callRemoteTool, unpackToolResult, RemoteMcpError } from '../core/mcp-client.ts';
 import { computeContentHash } from '../core/ingestion/types.ts';
+import { OperationError } from '../core/ops/contract.ts';
 import { operations } from '../core/operations.ts';
 import type { OperationContext } from '../core/operations.ts';
 import { resolveSourceWithTier } from '../core/source-resolver.ts';
@@ -58,6 +59,15 @@ import {
 } from '../core/schema-pack/write-vocabulary.ts';
 
 export { detectBinaryNullByte, normalizeForHash, mergeCaptureFrontmatter } from '../core/capture-content.ts';
+
+/** Stable CLI denial protocol; never infer authority from an error message. */
+export function captureMutationDenial(error: unknown): string | null {
+  if ((error instanceof OperationError && error.code === 'read_only') ||
+      (error instanceof RemoteMcpError && error.reason === 'tool_error' && error.detail?.code === 'read_only')) {
+    return 'Error [read_only]: Mutations are currently disabled by the operator.';
+  }
+  return null;
+}
 
 interface RunOpts {
   content?: string;
@@ -406,8 +416,11 @@ export async function runCapture(engine: BrainEngine | null, args: string[]): Pr
       // A2/T1: detect server-side FK violation and rewrite to friendly hint.
       // RemoteMcpError wraps the server's error envelope; the underlying
       // PG message is in the wrapped string.
+      const denial = captureMutationDenial(e);
       const hint = maybeRewriteSourceFkError(e, parsed.source ?? resolvedSourceId);
-      if (hint) {
+      if (denial) {
+        console.error(denial);
+      } else if (hint) {
         console.error(`gbrain capture: ${hint}`);
       } else if (e instanceof RemoteMcpError) {
         console.error(`gbrain capture: remote put_page failed: ${e.message}`);
@@ -512,8 +525,11 @@ export async function runCapture(engine: BrainEngine | null, args: string[]): Pr
     // resolveSourceWithTier above usually catches missing sources upstream,
     // but a TOCTOU race (source deleted between pre-flight and put_page) or
     // an explicit --source bypass would surface here.
+    const denial = captureMutationDenial(e);
     const hint = maybeRewriteSourceFkError(e, parsed.source ?? resolvedSourceId);
-    if (hint) {
+    if (denial) {
+      console.error(denial);
+    } else if (hint) {
       console.error(`gbrain capture: ${hint}`);
     } else {
       console.error(

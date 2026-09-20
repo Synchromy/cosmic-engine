@@ -1,3 +1,5 @@
+import { OperationError } from '../src/core/ops/contract.ts';
+import { RemoteMcpError } from '../src/core/mcp-client.ts';
 import { afterEach, beforeEach, describe, expect, test, spyOn } from 'bun:test';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, renameSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -5,7 +7,7 @@ import { join } from 'node:path';
 import { operations, operationsByName, type OperationContext } from '../src/core/operations.ts';
 import { dispatchToolCall } from '../src/mcp/dispatch.ts';
 import { guardOperations, requiresMutationAdmission } from '../src/core/mutation-policy.ts';
-import { runCapture } from '../src/commands/capture.ts';
+import { runCapture, captureMutationDenial } from '../src/commands/capture.ts';
 import type { Operation } from '../src/core/operations.ts';
 import { handleToolCall } from '../src/mcp/server.ts';
 
@@ -182,8 +184,55 @@ describe('policy boundaries and continuity', () => {
     try {
       await expect(runCapture(engine, ['Synthetic capture fixture', '--source', 'default', '--slug', 'test/capture', '--json']))
         .rejects.toThrow('fixture exit 1');
-      expect(errors.join(' ')).toContain('Mutations are currently disabled');
+      expect(errors).toEqual(['Error [read_only]: Mutations are currently disabled by the operator.']);
       expect(queries.length).toBe(1);
     } finally { exit.mockRestore(); stderr.mockRestore(); }
   });
+});
+
+test('capture protocol accepts only typed local and remote mutation denials', () => {
+  const expected = 'Error [read_only]: Mutations are currently disabled by the operator.';
+  expect(captureMutationDenial(new OperationError('read_only', 'sensitive body'))).toBe(expected);
+  expect(captureMutationDenial(new RemoteMcpError('tool_error', 'sensitive upstream', { code: 'read_only' }))).toBe(expected);
+  for (const error of [
+    new Error(expected), { code: 'read_only' },
+    new OperationError('not_found', 'read_only'),
+    new RemoteMcpError('network', 'read_only', { code: 'read_only' }),
+    new RemoteMcpError('tool_error', 'read_only'),
+    new RemoteMcpError('tool_error', 'sensitive', { code: 'missing_scope' }),
+  ]) expect(captureMutationDenial(error)).toBeNull();
+});
+
+test('actual remote capture catch emits the protocol line and exits nonzero without upstream content', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'capture-remote-denial-'));
+  try {
+    mkdirSync(join(home, '.gbrain'));
+    writeFileSync(join(home, '.gbrain/config.json'), JSON.stringify({ remote_mcp: {
+      issuer_url: 'https://fixture.invalid', mcp_url: 'https://fixture.invalid/mcp', oauth_client_id: 'fixture',
+    } }));
+    // Isolated process prevents this mocked transport boundary leaking to other tests.
+    // Capture itself, config routing, typed error and process exit are real.
+    const source = `
+      import { mock } from 'bun:test';
+      const transport = await import('./src/core/mcp-client.ts');
+      mock.module('./src/core/mcp-client.ts', () => ({
+        ...transport, callRemoteTool: async () => {
+          throw new transport.RemoteMcpError('tool_error', 'private upstream body', {code:'read_only'});
+        },
+      }));
+      const { runCapture } = await import('./src/commands/capture.ts');
+      await runCapture(null, ['Synthetic remote capture', '--slug', 'fixture/page']);
+    `;
+    const child = Bun.spawn([process.execPath, '-e', source], {
+      cwd: join(import.meta.dir, '..'),
+      env: { PATH: '/usr/bin:/bin', HOME: home, GBRAIN_HOME: home },
+      stdout: 'pipe', stderr: 'pipe',
+    });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
+    ]);
+    expect(code).toBe(1);
+    expect(stdout).toBe('');
+    expect(stderr.trim()).toBe('Error [read_only]: Mutations are currently disabled by the operator.');
+  } finally { rmSync(home, {recursive:true,force:true}); }
 });

@@ -1,3 +1,4 @@
+import { allowsMutation } from '../mutation-policy.ts';
 /**
  * MinionWorker — Concurrent in-process job worker with BullMQ-inspired patterns.
  *
@@ -192,6 +193,21 @@ export class MinionWorker extends EventEmitter {
   private running = false;
   /** Log the pause/resume transition once each, not every poll. */
   private pausedByMarkerAnnounced = false;
+  private mutationPolicyPaused = false;
+  private mutationPolicyResumedAt = 0;
+
+  private mutationsAdmitted(): boolean {
+    const allowed = allowsMutation();
+    if (!allowed && !this.mutationPolicyPaused) {
+      console.log('[worker] host policy paused new job admission.');
+      this.mutationPolicyPaused = true;
+    } else if (allowed && this.mutationPolicyPaused) {
+      console.log('[worker] host policy resumed job admission.');
+      this.mutationPolicyPaused = false;
+      this.mutationPolicyResumedAt = Date.now();
+    }
+    return allowed;
+  }
   private inFlight = new Map<number, InFlightJob>();
   private workerId = randomUUID();
 
@@ -441,6 +457,10 @@ export class MinionWorker extends EventEmitter {
         console.error('Wall-clock timeout detection error:', e instanceof Error ? e.message : String(e));
         await recoverConnection('handleWallClockTimeouts', e);
       }
+      // Waiting jobs must not expire while admission is intentionally paused.
+      // Existing TTL clocks are not frozen: stale work may expire on resume.
+      // Active/stalled recovery above remains available.
+      if (!this.mutationsAdmitted()) return;
       // 4th sweep: waiting-TTL (admission control). Warn-before-act (user
       // requirement D1A) lives in runWaitingTtlTick (admission.ts): the first
       // tick counts + stamps the notice timestamp, sweeping starts only after
@@ -587,6 +607,14 @@ export class MinionWorker extends EventEmitter {
           // detector too would double-act (and both emitting 'unhealthy' +
           // supervisor SIGTERM race). Bare `gbrain jobs work` keeps it.
           if (!isSupervisedChild) {
+          // Liveness above still runs while intentionally idle. Resume starts
+          // a fresh progress window even if no job has ever completed.
+          if (!this.mutationsAdmitted()) {
+            lastCompletionTime = Date.now();
+            stallWarningSince = null;
+            return;
+          }
+          lastCompletionTime = Math.max(lastCompletionTime, this.mutationPolicyResumedAt);
           if (this.jobsCompleted > lastKnownCompleted) {
             lastKnownCompleted = this.jobsCompleted;
             lastCompletionTime = Date.now();
@@ -663,6 +691,10 @@ export class MinionWorker extends EventEmitter {
 
     try {
       while (this.running) {
+        if (!this.mutationsAdmitted()) {
+          await new Promise(resolve => setTimeout(resolve, this.opts.pollInterval));
+          continue;
+        }
         // Promote delayed jobs
         try {
           await this.queue.promoteDelayed();
@@ -699,6 +731,7 @@ export class MinionWorker extends EventEmitter {
           this.pausedByMarkerAnnounced = false;
         }
         if (this.inFlight.size < this.opts.concurrency) {
+          if (!this.mutationsAdmitted()) continue;
           const lockToken = `${this.workerId}:${Date.now()}`;
           let job: MinionJob | null;
           try {
@@ -725,6 +758,10 @@ export class MinionWorker extends EventEmitter {
           }
 
           if (job) {
+            if (!this.mutationsAdmitted()) {
+              await this.releaseClaimForPause(job, lockToken, true);
+              continue;
+            }
             // Post-claim fence re-check: the pre-claim marker check above
             // races migrate's marker write — this claim may have committed
             // after migrate's drain probe counted zero active jobs. A job
@@ -808,20 +845,23 @@ export class MinionWorker extends EventEmitter {
    * defer, but with a short delay: the poll loop parks on the marker, so the
    * job re-enters waiting and is picked up as soon as the pause clears.
    */
-  private async releaseClaimForPause(job: MinionJob, lockToken: string): Promise<void> {
+  private async releaseClaimForPause(job: MinionJob, lockToken: string, restoreUnexecutedClaim = false): Promise<void> {
     try {
       await this.engine.executeRaw(
         `UPDATE minion_jobs
          SET status = 'delayed', lock_token = NULL, lock_until = NULL,
              delay_until = now() + interval '1 minute',
+             attempts_started = CASE WHEN $3 THEN GREATEST(attempts_started - 1, 0) ELSE attempts_started END,
+             timeout_at = CASE WHEN $3 THEN NULL ELSE timeout_at END,
+             started_at = CASE WHEN $3 AND attempts_started <= 1 THEN NULL ELSE started_at END,
              updated_at = now()
-         WHERE id = $1 AND lock_token = $2`,
-        [job.id, lockToken],
+         WHERE id = $1 AND lock_token = $2 AND status = 'active'`,
+        [job.id, lockToken, restoreUnexecutedClaim],
       );
     } catch (e) {
-      // Fail-open: if the release UPDATE itself fails, the claim lock simply
-      // expires and the stall detector requeues the row — slower, same end
-      // state, and never a reason to crash the worker.
+      // Never launch after a denied claim, including on release failure.
+      // Lock expiry/stall recovery remains available; it can change retry
+      // accounting, so a storage failure cannot promise an untouched attempt.
       console.error(`[worker] pause release failed for job ${job.id}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }

@@ -1,7 +1,7 @@
 /**
- * Optional host-owned admission policy for registered operations.
+ * Optional host-owned admission policy for operations and background entry points.
  * This is not a database write barrier: already admitted handlers, incidental
- * read bookkeeping and direct engine/background writers are outside this gate.
+ * read bookkeeping and unguarded direct writers are outside this gate.
  */
 import { openSync, closeSync, fstatSync, readSync, constants } from 'node:fs';
 import { OperationError, type Operation } from './ops/contract.ts';
@@ -9,7 +9,7 @@ import { OperationError, type Operation } from './ops/contract.ts';
 const MAX_POLICY_BYTES = 4096;
 const wrapped = new WeakSet<Operation>();
 
-function allowsMutation(): boolean {
+export function allowsMutation(): boolean {
   const path = process.env.GBRAIN_MUTATION_POLICY_FILE;
   if (path === undefined) return true;
   let fd: number | undefined;

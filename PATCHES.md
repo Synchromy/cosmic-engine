@@ -69,3 +69,12 @@ needs; never per upstream release.
 for registered operations on the exact deployed engine pin. No upstream PR or
 release exists yet. Direct engine writers and running background jobs are not
 covered; this is not a whole-process read-only switch.
+
+`feat/background-mutation-admission-0921` extends that local candidate to worker
+admission and queue progress diagnostics, defers waiting-TTL/private-queue
+cancellation while paused, and exposes typed capture denials as a stable CLI
+line. No upstream PR or release exists yet. Already admitted handlers and
+active/stalled recovery (including orphaned-parent bookkeeping) may finish.
+TTL and lease ages continue; expired waiting work can be cancelled after
+resumption. Inline dream drains and unguarded direct writers remain outside
+coverage. Policy reads and database claims do not form an atomic barrier.
