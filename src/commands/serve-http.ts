@@ -1,3 +1,5 @@
+import { loadOperationLifecycle, LIFECYCLE_MODULE_ENV, type LoadedLifecycle } from '../core/operation-lifecycle-loader.ts';
+import { runOperationRequest } from '../core/operation-lifecycle-runner.ts';
 import { resourcePolicyFromEnvironment } from '../core/oauth-resource-policy.ts';
 /**
  * GBrain HTTP MCP server with OAuth 2.1.
@@ -898,6 +900,7 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
   }
 
   const resourcePolicy = resourcePolicyFromEnvironment(process.env.GBRAIN_OAUTH_RESOURCE_POLICY, publicUrl);
+  let operationLifecycle: LoadedLifecycle | undefined;
   const oauthProvider = new GBrainOAuthProvider({
     resourcePolicy,
     sql,
@@ -2468,7 +2471,8 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
       return { tools };
     });
 
-    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    server.setRequestHandler(CallToolRequestSchema, async (request) => runOperationRequest(
+      operationLifecycle, resourcePolicy?.canonicalResource ?? '', authInfo, req, res, async (operationRequest) => {
       const { name, arguments: params } = request.params;
       const op = mcpOperations.find(o => o.name === name);
       if (!op) {
@@ -2617,6 +2621,7 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
           sourceId: tokenSourceId,
           ...(localFederated ? { localFederatedSourceIds: localFederated } : {}),
           metaHook: getBrainHotMemoryMeta,
+          ...(operationRequest ? { operationRequest } : {}),
           // MEMORY_VERBS v1: fail-closed surface enforcement + usage attribution.
           ...(surfaceAllowedOps ? { allowedOps: surfaceAllowedOps } : {}),
           surface,
@@ -2727,7 +2732,7 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
         timestamp: new Date().toISOString(),
       });
       return toolResult;
-    });
+    }));
 
     // F14: wrap transport setup + handleRequest in try/catch. Without this,
     // an SDK-level throw (e.g., schema parse failure on a malformed request)
@@ -3331,6 +3336,17 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
   // ---------------------------------------------------------------------------
   const clientCount = await sql`SELECT count(*)::int as count FROM oauth_clients`;
 
+  operationLifecycle = await loadOperationLifecycle(process.env[LIFECYCLE_MODULE_ENV], {
+    engine, resource: resourcePolicy?.canonicalResource ?? '',
+    operations: Object.freeze(mcpOperationsBase.map(op => Object.freeze({
+      name: op.name, scope: op.scope ?? 'read', mutating: op.mutating === true,
+    }))),
+    report: event => console.error(`[operation-lifecycle] ${event}`),
+  });
+  const deregisterLifecycle = operationLifecycle
+    ? registerCleanup('operation-lifecycle', () => operationLifecycle!.shutdown())
+    : () => {};
+  try {
   const httpServer = app.listen(port, bind, () => {
     console.error(`
 ╔══════════════════════════════════════════════════════╗
@@ -3398,5 +3414,9 @@ ${bootstrapFromEnv
     ipcBinding.close();
     deregisterIpcCleanup();
     deregisterEngineCleanup();
+  }
+  } finally {
+    await operationLifecycle?.shutdown();
+    deregisterLifecycle();
   }
 }

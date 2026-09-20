@@ -6,6 +6,7 @@
  * + missing-context bugs; this module exists to prevent that recurring.
  */
 
+import { assertOperationRequest, operationRequestError, type OperationRequest } from '../core/operation-lifecycle-runner.ts';
 import { affectsRecall } from '../core/types.ts';
 import type { BrainEngine } from '../core/engine.ts';
 import { operations, OperationError, enforceBoundClientOpAllowList } from '../core/operations.ts';
@@ -125,6 +126,10 @@ export interface ToolResult {
 }
 
 export interface DispatchOpts {
+  /** Live scope created only by the trusted HTTP request runner. */
+  operationRequest?: OperationRequest;
+  /** Server-owned restriction; never read from tool parameters. */
+  beforePageRead?: OperationContext['beforePageRead'];
   /** Defaults to true (remote/untrusted). Local CLI callers (`gbrain call`) pass false. */
   remote?: boolean;
   /** Override the default stderr logger (e.g. CLI uses console.* directly). */
@@ -483,6 +488,7 @@ export function buildOperationContext(
     ...(opts.localFederatedSourceIds ? { localFederatedSourceIds: opts.localFederatedSourceIds } : {}),
     ...(opts.surfaceCeiling ? { surfaceCeiling: opts.surfaceCeiling } : {}),
     auth: opts.auth,
+    ...(opts.beforePageRead ? { beforePageRead: opts.beforePageRead } : {}),
   };
 }
 
@@ -669,6 +675,11 @@ export async function dispatchToolCall(
     // run inside the handlers; this stops an unfenced write op from being
     // a silent hole. See CLIENT_FENCED_WRITE_OPS in operations.ts.
     enforceBoundClientOpAllowList(ctx.auth, op);
+    let allowOptionalEnrichment = true;
+    if (opts.operationRequest) {
+      assertOperationRequest(opts.operationRequest, ctx);
+      allowOptionalEnrichment = await opts.operationRequest.begin(op, safeParams, ctx);
+    }
     const result = await op.handler(ctx, safeParams);
     // [E4] verb success metrics: budget drops + entity hit/miss when present.
     {
@@ -718,7 +729,7 @@ export async function dispatchToolCall(
     // The hook is wrapped in its own try/catch — any DB blip / cache miss /
     // helper crash degrades to no hook keys rather than flipping the whole
     // tool call to error.
-    if (opts.metaHook) {
+    if (opts.metaHook && allowOptionalEnrichment) {
       try {
         const meta = await opts.metaHook(name, ctx);
         if (meta && Object.keys(meta).length > 0) out._meta = { ...(out._meta ?? {}), ...meta };
@@ -730,6 +741,8 @@ export async function dispatchToolCall(
     return out;
   } catch (e: unknown) {
     logVerb(false);
+    const lifecycleFailure = operationRequestError(e);
+    if (lifecycleFailure) return lifecycleFailure;
     if (e instanceof OperationError) {
       return { content: [{ type: 'text', text: JSON.stringify(e.toJSON(), null, 2) }], isError: true };
     }

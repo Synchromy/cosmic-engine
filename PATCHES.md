@@ -85,3 +85,7 @@ Final SQL binds the expected page identity; restore/source/privacy semantics
 remain as before. No accounting, transport bootstrap, upstream PR, release or
 activation exists in this slice. Ordinary successful reads add one metadata
 query even without a callback.
+
+## Local native lifecycle candidate
+
+`feat/native-operation-lifecycle-0921` adds optional generic trusted-host lifecycle admission for native HTTP tools. Source and actual compiled executable use the same external-module path. This local candidate has no upstream PR or deployment. Producer outcomes, proprietary accounting and internal-subcall propagation remain separate prerequisites before a paid host is enabled.
