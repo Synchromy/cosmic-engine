@@ -283,7 +283,9 @@ const synthesize: Operation = {
     const { embedQuery } = await import('./embedding.ts');
     // Remote-safe delegation: save/take are NEVER offered through this verb,
     // for any caller — the verb is a pure read.
+    const completion = ctx.reportFailure ? new RetrievalCompletion() : undefined;
     const result = await runThink(ctx.engine, {
+      completion,
       question,
       since: p.since ? String(p.since) : undefined,
       until: p.until ? String(p.until) : undefined,
@@ -295,6 +297,11 @@ const synthesize: Operation = {
       // #3734: activate takes' vector retrieval arm for the synthesize verb.
       embedQuestion: (q) => embedQuery(q),
     });
+
+    if (completion && !completion.seal().completed) {
+      ctx.reportFailure!({ code: 'unavailable' });
+      return {};
+    }
 
     // [c10] runThink degrades gracefully to a no-LLM stub RESULT; the protocol
     // contract converts that state into an explicit `unavailable` error so

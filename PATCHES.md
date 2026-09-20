@@ -105,3 +105,7 @@ Optional trusted completion follows accepted entity-card lookup/hydration and pa
 ## Local optional composite host candidate
 
 `feat/context-parent-engine-0921` adds a separately versioned optional composite port on the existing lifecycle host, bounded original-envelope capture and a fixed caller-authenticated child dispatcher. Native operations and ordinary authentication remain unchanged. Application proof/replay/parent accounting and public gateway integration remain separate prerequisites. No upstream PR, deployment or paid activation is claimed.
+
+## Local think retrieval completion
+
+Optional trusted evidence follows accepted gather stream results and processed trajectory winners into think/synthesize. Discarded temporal floor results and timed-out trajectories cannot supply completion. Failed think remains withheld under the configured lifecycle; synthesize preserves its existing accepted extractive fallback. Standalone behavior, source/privacy scope, calibration and model policy stay unchanged. Volunteer/reflex/ordinary turn, cursor effects and host/composite integration remain activation prerequisites. Local-only; no upstream PR, release or paid activation.
