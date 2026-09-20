@@ -629,7 +629,7 @@ const delta: Operation = {
   annotations: { title: 'delta (what changed since)', readOnlyHint: true },
   handler: async (ctx, p) => {
     const { assembleDeltaContext, renderDelta, PACK_DEFAULT_MAX_ENTITIES } = await import('../context/turn-context.ts');
-    const { getSessionContextState, upsertSessionContextState } = await import('../context/session-state.ts');
+    const { getSessionContextState, upsertSessionContextState, readSessionContextStateForDelivery, createSessionCursorDeliveryEffect } = await import('../context/session-state.ts');
     const sourceId = ctx.sourceId ?? 'default';
     const rawSince = typeof p.since === 'string' && p.since.trim() ? p.since : null;
     if (rawSince !== null && !Number.isFinite(Date.parse(rawSince))) {
@@ -678,7 +678,21 @@ const delta: Operation = {
         ? Math.floor(p.budget_tokens)
         : null;
 
-    const state = sessionId ? await getSessionContextState(ctx.engine, sourceId, clientId, sessionId) : null;
+    const deferred = typeof ctx.reportFailure === 'function';
+    if (deferred && typeof ctx.deferAfterDelivery !== 'function') {
+      ctx.reportFailure!({ code: 'unavailable' });
+      return {};
+    }
+    const observed = deferred && sessionId
+      ? await readSessionContextStateForDelivery(ctx.engine, sourceId, clientId, sessionId) : undefined;
+    if (observed?.status === 'unavailable' && !explicitSince) {
+      ctx.reportFailure!({ code: 'unavailable' });
+      return {};
+    }
+    const state = deferred ? (observed?.status === 'present' ? observed.state : null)
+      : sessionId ? await getSessionContextState(ctx.engine, sourceId, clientId, sessionId) : null;
+    const expected = observed?.status === 'present' ? observed.expected
+      : observed?.status === 'absent' ? observed : undefined;
     const effectiveSince = explicitSince ?? state?.last_wake_at ?? null;
 
     if (!effectiveSince) {
@@ -702,9 +716,11 @@ const delta: Operation = {
       // (src/mcp/server.ts) stays fire-and-forget — that process is long-lived.
       const now = new Date().toISOString();
       const { gcSessionContextState } = await import('../context/session-state.ts');
-      await upsertSessionContextState(ctx.engine, sourceId, clientId, sessionId, { lastWakeAt: now });
-      await gcSessionContextState(ctx.engine);
-      return {
+      if (!deferred) {
+        await upsertSessionContextState(ctx.engine, sourceId, clientId, sessionId, { lastWakeAt: now });
+        await gcSessionContextState(ctx.engine);
+      }
+      const result = {
         protocol_version: MEMORY_VERBS_VERSION,
         since: now, pages: [], facts: [], threads: [], text: '', has_more: false,
         next_cursor: { since: now, slug: '' },
@@ -712,6 +728,10 @@ const delta: Operation = {
           ? { budget_tokens: budgetTokens, budget_used: 0, dropped_count: 0 }
           : {}),
       };
+      if (deferred && expected) {
+        ctx.deferAfterDelivery!(createSessionCursorDeliveryEffect(ctx.engine, sourceId, clientId, sessionId, expected, { lastWakeAt: now }, true));
+      }
+      return result;
     }
 
     // Keyset cursor (red-team F1/F2 fix): pages page by (updated_at, slug), so
@@ -782,18 +802,11 @@ const delta: Operation = {
       pages.length > 0
         ? { since: pages[pages.length - 1].updated_at, slug: pages[pages.length - 1].slug }
         : { since: effectiveSince, slug: sinceSlug ?? '' };
-    if (sessionId) {
-      if (pages.length > 0) {
-        await upsertSessionContextState(ctx.engine, sourceId, clientId, sessionId, {
-          lastWakeAt: nextCursor.since,
-          cursorSlug: nextCursor.slug,
-        });
-      } else if (!hasMore) {
-        await upsertSessionContextState(ctx.engine, sourceId, clientId, sessionId, {
-          lastWakeAt: new Date(Date.now() - 2000).toISOString(),
-          cursorSlug: '',
-        });
-      }
+    const cursorPatch = pages.length > 0
+      ? { lastWakeAt: nextCursor.since, cursorSlug: nextCursor.slug }
+      : !hasMore ? { lastWakeAt: new Date(Date.now() - 2000).toISOString(), cursorSlug: '' } : undefined;
+    if (sessionId && cursorPatch && !deferred) {
+      await upsertSessionContextState(ctx.engine, sourceId, clientId, sessionId, cursorPatch);
     }
 
     // Re-render the injectable block from the FINAL sets (adversarial review):
@@ -801,7 +814,7 @@ const delta: Operation = {
     // structured arrays reflect — the assembler's render predates both.
     const text = renderDelta(pages, facts, threads, effectiveSince);
 
-    return {
+    const result = {
       protocol_version: MEMORY_VERBS_VERSION,
       since: effectiveSince,
       pages,
@@ -825,6 +838,10 @@ const delta: Operation = {
         ? { budget_tokens: budgetTokens, budget_used: budgetUsed, dropped_count: droppedCount }
         : {}),
     };
+    if (deferred && sessionId && expected && cursorPatch) {
+      ctx.deferAfterDelivery!(createSessionCursorDeliveryEffect(ctx.engine, sourceId, clientId, sessionId, expected, cursorPatch));
+    }
+    return result;
   },
 };
 

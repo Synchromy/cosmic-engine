@@ -113,3 +113,7 @@ Optional trusted evidence follows accepted gather stream results and processed t
 ## Local volunteer and ordinary turn completion
 
 Trusted evidence follows applicable resolver queries, global weak-alias liveness, required body hydration, accepted volunteer selection and actual statistics. A weak-only no-op title query cannot hide a failed alias arm. Ordinary turn retains Promise.all and publishes only with its final processed result; a caller's sealed discarded outcome ignores late publication. Standalone/source/privacy/telemetry behavior is unchanged. Stateful cursor effects and host/composite integration remain activation prerequisites. Local-only, no upstream PR, release or paid activation.
+
+## Local delta cursor delivery effects
+
+Configured delta distinguishes unavailable cursor storage from a confirmed first wake, then applies one namespaced timestamp-and-slug compare-and-swap after definitive authorization. Expected timestamps use text binding to retain PostgreSQL microseconds; null and empty first slots remain distinct. The optional effect does not delay handoff and cannot retract delivery. Standalone cursor behavior remains unchanged. Local-only; no upstream PR, release or activation.

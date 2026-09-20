@@ -732,3 +732,7 @@ Authorization precedes handoff to the current SSE SDK, not network receipt. Batc
 ## Optional composite operation host
 
 `src/core/operation-composite.ts` defines a separately versioned optional read-only composite registry and admission-first deferred execution port. The existing loader preserves and validates it; malformed late factories close acquired resources before validation. `operation-original-envelope.ts` captures bounded complete parsed requests before SDK normalization, while `operation-composite-http.ts` retains original caller credentials in a fixed loopback dispatcher and delegates authority validation to the trusted host. Ordinary native descriptors are unchanged. The runner owns final producer-outcome checks, authorization and effects; unsupported transports refuse reserved authority headers. Application signing, replay, parent state and public proxy stripping are separate host responsibilities. Tests: `test/operation-composite.test.ts`, `test/operation-composite-http.test.ts`; guide: `docs/mcp/operation-composite.md`.
+
+## Authorized delta cursor delivery
+
+- `src/core/context/session-state.ts` — configured delta reads distinguish absent/present/unavailable state and preserve raw microsecond timestamp plus null-safe first-slot operands. Conditional cursor writes bind timestamps through text and preserve unrelated metadata. The copied deferred effect checks cancellation before CAS and between GC statements; conflicts never blind-upsert. Legacy standalone reads/upserts remain fail-open.
