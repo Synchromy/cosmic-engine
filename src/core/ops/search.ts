@@ -719,6 +719,7 @@ const query: Operation = {
 
 const search_stats: Operation = {
   name: 'search_stats',
+  mutating: false, // Inspection only; remains available under mutation policy.
   description:
     'Search observability over a window: cache hit rate, intent/mode mix, budget drops, ' +
     'rank-1 score drift, graph-signals failure counts. Same payload as the search-stats ' +
@@ -781,6 +782,7 @@ const search_modes: Operation = {
 
 const search_tune: Operation = {
   name: 'search_tune',
+  mutating: false, // Inspection only; remains available under mutation policy.
   description:
     'Read-only tuning recommendations derived from the last 7 days of search telemetry: ' +
     'what should change, why, and the paste-ready config command per recommendation — relay ' +
@@ -799,6 +801,7 @@ const search_tune: Operation = {
 
 const cache_stats: Operation = {
   name: 'cache_stats',
+  mutating: false, // Inspection only; remains available under mutation policy.
   description:
     'Semantic query-cache introspection: resolved knobs (enabled, similarity threshold, TTL) ' +
     'plus row counts and total hits. Read-only; clearing/pruning the cache stays on the CLI.',

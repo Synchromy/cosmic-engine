@@ -62,3 +62,10 @@ delete its line here and its branch; the next rebuild carries one patch less.
 The hub pins the resulting SHA in its Dockerfile (cosmic-hub #352 is the
 first). Cadence: monthly, or when an upstream release carries a fix Cosmic
 needs; never per upstream release.
+
+## Local candidate awaiting publication
+
+`feat/generic-read-only-guard-0920` adds optional host-owned mutation admission
+for registered operations on the exact deployed engine pin. No upstream PR or
+release exists yet. Direct engine writers and running background jobs are not
+covered; this is not a whole-process read-only switch.

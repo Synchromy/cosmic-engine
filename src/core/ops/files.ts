@@ -18,6 +18,7 @@ const FILE_LIST_LIMIT = 100;
 
 const file_list: Operation = {
   name: 'file_list',
+  mutating: false, // Inspection only; remains available under mutation policy.
   description: 'List stored files',
   params: {
     slug: { type: 'string', description: 'Filter by page slug' },
@@ -143,6 +144,7 @@ const file_upload: Operation = {
 
 const file_url: Operation = {
   name: 'file_url',
+  mutating: false, // Inspection only; remains available under mutation policy.
   description: 'Get a URL for a stored file',
   params: {
     storage_path: { type: 'string', required: true },

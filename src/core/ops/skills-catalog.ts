@@ -185,6 +185,7 @@ const advisor: Operation = {
  */
 const get_status_snapshot: Operation = {
   name: 'get_status_snapshot',
+  mutating: false, // Inspection only; remains available under mutation policy.
   description: 'Snapshot for `gbrain status` thin-client mode: sync freshness + last cycle + queue depths + worker liveness. Admin-scope.',
   params: {},
   handler: async (ctx) => {

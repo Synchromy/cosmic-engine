@@ -1,3 +1,4 @@
+import { guardOperations } from './mutation-policy.ts';
 /**
  * Contract-first operation definitions. Single source of truth for CLI, MCP, and tools-json.
  * Each operation defines its schema, handler, and optional CLI hints.
@@ -315,6 +316,9 @@ for (const op of operations) {
     op.area = OP_AREAS[op.name];
   }
 }
+
+// Guard in place: nested references and every registry consumer keep this boundary.
+guardOperations(operations);
 
 export const operationsByName = Object.fromEntries(
   operations.map(op => [op.name, op]),
