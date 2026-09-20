@@ -101,3 +101,7 @@ Optional trusted completion evidence follows the selected search/query result th
 ## Local entity and context completion
 
 Optional trusted completion follows accepted entity-card lookup/hydration and pack/delta assembly. Array snapshots and evidence seal together at the existing inner deadline; late work cannot authorize or alter a delivered snapshot. Configured all-unavailable results stop before enrichment and the later delta cursor write. Standalone behavior, source/privacy filtering and query counts are unchanged. First-wake and successful cursor effects, think/volunteer families and host integration remain prerequisites. Local-only; no upstream PR, release or paid activation.
+
+## Local optional composite host candidate
+
+`feat/context-parent-engine-0921` adds a separately versioned optional composite port on the existing lifecycle host, bounded original-envelope capture and a fixed caller-authenticated child dispatcher. Native operations and ordinary authentication remain unchanged. Application proof/replay/parent accounting and public gateway integration remain separate prerequisites. No upstream PR, deployment or paid activation is claimed.

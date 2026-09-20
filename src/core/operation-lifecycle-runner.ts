@@ -70,10 +70,11 @@ class RequestScope {
   private stopReason: ReleaseReason = 'deadline';
   private rejectStopped!: (error: LifecycleError) => void;
   private readonly stopped = new Promise<never>((_, reject) => { this.rejectStopped = reject; });
-  constructor(readonly loaded: LoadedLifecycle, readonly resource: string, auth: AuthInfo) {
+  constructor(readonly loaded: LoadedLifecycle, readonly resource: string, auth: AuthInfo, deadlineAt?: number) {
     this.principal = projectLifecyclePrincipal(auth);
     this.endEpoch = Math.min(this.startedAt + loaded.host.limits.operationTimeoutMs,
-      this.principal.expiresAtMs ?? Infinity);
+      this.principal.expiresAtMs ?? Infinity, deadlineAt ?? Infinity);
+    if (!Number.isFinite(this.endEpoch) || this.endEpoch <= Date.now()) throw new LifecycleError('deadline');
     this.endMono = performance.now() + Math.max(0, this.endEpoch - Date.now());
     // A stopped scope can precede the first awaited work.
     void this.stopped.catch(() => {});
@@ -132,7 +133,7 @@ class RequestScope {
     }
     this.effects.push(effect);
   }
-  async begin(op: Operation, params: Record<string, unknown>, ctx: OperationContext): Promise<boolean> {
+  async begin(op: Operation, params: Record<string, unknown>, ctx: Pick<OperationContext, 'reportFailure' | 'deferAfterDelivery' | 'beforePageRead'>): Promise<boolean> {
     this.check();
     if (this.began) throw new LifecycleError('authorization_uncertain');
     this.began = true;
@@ -261,10 +262,11 @@ export async function runOperationRequest(
   loaded: LoadedLifecycle | undefined, resource: string, auth: AuthInfo,
   request: RequestEvents, response: ResponseEvents,
   work: (scope?: OperationRequest) => Promise<ToolResult>,
+  deadlineAt?: number,
 ): Promise<ToolResult> {
   if (!loaded) return work();
   let scope: RequestScope;
-  try { scope = new RequestScope(loaded, resource, auth); }
+  try { scope = new RequestScope(loaded, resource, auth, deadlineAt); }
   catch { return failureResult(); }
   const onAbort = () => scope.stop('disconnected');
   const onClose = () => { if (!response.writableFinished) scope.stop('disconnected'); };

@@ -1,3 +1,5 @@
+import type { CompositeHostV1 } from './operation-composite.ts';
+export type { CompositeHostV1, CompositeInvocation, CompositeOutcomeContext, CompositeExecution, CompositeDispatch } from './operation-composite.ts';
 import type { BrainEngine } from './engine.ts';
 import type { PageReadTarget } from './page-read-identity.ts';
 
@@ -33,6 +35,7 @@ export interface OperationAdmission {
 }
 export interface OperationLifecycleHost {
   readonly version: 1;
+  readonly composite?: CompositeHostV1;
   readonly limits: Readonly<{
     operationTimeoutMs: number; maxResponseBytes: number; shutdownTimeoutMs: number;
   }>;

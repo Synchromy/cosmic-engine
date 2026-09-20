@@ -354,6 +354,11 @@ export async function startHttpTransport(opts: HttpTransportOptions) {
         return Response.json({ error: 'method_not_allowed' }, { status: 405, headers: corsHeaders(origin) });
       }
 
+      // This transport has no trusted composite host; reserved authority never falls through.
+      if ([...req.headers.keys()].some(name => name.toLowerCase().startsWith('x-gbrain-internal-'))) {
+        return Response.json({ error: 'internal_operation_refused' }, { status: 403, headers: corsHeaders(origin) });
+      }
+
       const ip = resolveClientIp(req, server);
 
       // Pre-auth IP rate limit. Fires BEFORE the DB lookup so we actually limit brute-force load.

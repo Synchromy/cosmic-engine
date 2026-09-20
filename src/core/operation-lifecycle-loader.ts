@@ -1,4 +1,5 @@
 import { OperationDeliveryEffects } from './operation-delivery-effects.ts';
+import { validateCompositeHost } from './operation-composite.ts';
 import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -73,12 +74,16 @@ export async function loadOperationLifecycle(
     if (candidate && typeof (candidate as OperationLifecycleHost).shutdown === 'function') {
       shutdownCandidate = (candidate as OperationLifecycleHost).shutdown.bind(candidate);
     }
+    // A timed-out factory can still acquire resources; close them before later validation throws.
+    if (abandoned) { void cleanup(); throw new Error('Late lifecycle initialization'); }
     if (!validHost(candidate)) {
       if (abandoned) void cleanup();
       throw new Error('Invalid lifecycle host');
     }
+    const composite = validateCompositeHost(candidate.composite, ports.operations);
     host = Object.freeze({
       version: 1 as const,
+      ...(composite ? { composite } : {}),
       limits: Object.freeze({ ...candidate.limits }),
       begin: candidate.begin.bind(candidate),
       shutdown: shutdownCandidate!,
