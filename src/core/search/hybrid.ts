@@ -1,3 +1,4 @@
+import { RetrievalCompletion } from '../retrieval-completion.ts';
 /**
  * Hybrid Search with Reciprocal Rank Fusion (RRF)
  * Ported from production Ruby implementation (content_chunk.rb)
@@ -922,7 +923,7 @@ export async function applyAliasHop(
   engine: import('../engine.ts').BrainEngine,
   results: SearchResult[],
   query: string,
-  opts: { sourceId?: string; sourceIds?: string[]; excludePrivate?: boolean; requireSafeChunks?: boolean },
+  opts: { sourceId?: string; sourceIds?: string[]; excludePrivate?: boolean; requireSafeChunks?: boolean; completion?: RetrievalCompletion },
 ): Promise<SearchResult[]> {
   if (!query) return results;
   const qNorm = normalizeAlias(query);
@@ -935,7 +936,7 @@ export async function applyAliasHop(
     return results; // pre-v110 table-missing OR transient error -> fail-open
   }
   const refs = aliasMap.get(qNorm);
-  if (!refs || refs.length === 0) return results;
+  if (!refs || refs.length === 0) { opts.completion?.complete(); return results; }
 
   // Deterministic + capped. Source-scoped: each canonical is a (source_id, slug)
   // pair so a federated caller boosts/injects the RIGHT source's page, never
@@ -961,7 +962,8 @@ export async function applyAliasHop(
     } catch {
       continue;
     }
-    if (!page) continue;
+    if (!page) { opts.completion?.complete(); continue; }
+    opts.completion?.complete();
     // #4352 — the alias inject path bypasses the engines' SQL visibility
     // clause (getPage, not search); re-apply the private predicate here so
     // an untrusted caller can't hop into a `visibility: private` page.
@@ -993,6 +995,8 @@ export async function applyAliasHop(
 }
 
 export interface HybridSearchOpts extends SearchOpts {
+  /** Internal evidence, published only with the selected result. */
+  completion?: RetrievalCompletion;
   expansion?: boolean;
   /** v0.43 — observability sink for the relational recall arm (fired/no-op,
    *  kind, seeds resolved, candidates, errored). Best-effort. */
@@ -1245,6 +1249,20 @@ export async function hybridSearch(
   query: string,
   opts?: HybridSearchOpts,
 ): Promise<SearchResult[]> {
+  const completion = opts?.completion ? new RetrievalCompletion() : undefined;
+  const relationalCompletion = opts?.completion ? new RetrievalCompletion() : undefined;
+  const finish = (rows: SearchResult[], includeRelational = true): SearchResult[] => {
+    if (completion) {
+      if (includeRelational && relationalCompletion) completion.accept(relationalCompletion.seal());
+      opts!.completion!.accept(completion.seal());
+    }
+    return rows;
+  };
+  const acceptVector = (...args: Parameters<typeof pushVectorList>): void => {
+    pushVectorList(...args);
+    completion?.complete();
+  };
+
   // v0.32.3 search-lite mode: resolve the active mode + per-key overrides
   // once at entry. Mode supplies DEFAULTS for intentWeighting, tokenBudget,
   // expansion, and searchLimit when the caller leaves those undefined.
@@ -1479,7 +1497,7 @@ export async function hybridSearch(
     earlyModality === 'image'
       ? [[], []]
       : await Promise.all([
-          engine.searchKeyword(query, searchOpts).catch((err: unknown) => {
+          engine.searchKeyword(query, searchOpts).then(rows => { completion?.complete(); return rows; }).catch((err: unknown) => {
             if (isDbAccessFailure(err)) keywordAccessError = err;
             warnOncePerProcess(
               'search-keyword-arm-failed',
@@ -1488,7 +1506,7 @@ export async function hybridSearch(
             );
             return [] as SearchResult[];
           }),
-          engine.searchTitles(query, searchOpts).catch((err: unknown) => {
+          engine.searchTitles(query, searchOpts).then(rows => { completion?.complete(); return rows; }).catch((err: unknown) => {
             if (isDbAccessFailure(err)) titleAccessError = err;
             warnOncePerProcess(
               'search-titles-arm-failed',
@@ -1552,6 +1570,7 @@ export async function hybridSearch(
   let relationalList: SearchResult[] = [];
   if (resolvedMode.relationalRetrieval) {
     relationalList = await buildRelationalArm(engine, query, {
+      completion: relationalCompletion,
       sourceId: opts?.sourceId,
       sourceIds: opts?.sourceIds,
       depth: resolvedMode.relational_retrieval_depth,
@@ -1622,6 +1641,7 @@ export async function hybridSearch(
     // T3/T4 — alias hop + evidence stamp even without an embedding provider
     // (the named-thing fix is most valuable exactly when vector is unavailable).
     const noEmbedPreExact = await applyAliasHop(engine, dedupResults(noEmbedResults), query, {
+      completion,
       sourceId: opts?.sourceId,
       sourceIds: opts?.sourceIds,
       excludePrivate: opts?.excludePrivate,
@@ -1629,6 +1649,7 @@ export async function hybridSearch(
     });
     // #1663 — structural exact-lookup tier (slug / exact-title identity).
     const noEmbedHopped = await applyExactLookupTier(engine, noEmbedPreExact, query, {
+      completion,
       sourceId: opts?.sourceId,
       sourceIds: opts?.sourceIds,
       titleCandidates: titleResults,
@@ -1699,7 +1720,7 @@ export async function hybridSearch(
         : {}),
       ...(noEmbedRelSlot ? { relational_evidence_slot: noEmbedRelSlot } : {}),
     });
-    return noEmbedBudgeted;
+    return finish(noEmbedBudgeted);
   }
 
   // v0.36 cross-modal wave: determine the effective modality once.
@@ -1820,7 +1841,7 @@ export async function hybridSearch(
           `Set search.unified_multimodal_only=true to bypass this fallback when reindex completes.`,
         );
       } else {
-        pushVectorList(vectorArms, unifiedList, 'original');
+        acceptVector(vectorArms, unifiedList, 'original');
         queryEmbedding = unifiedEmbedding;
         unifiedDone = true;
       }
@@ -1876,7 +1897,7 @@ export async function hybridSearch(
     // Image-only path: results come entirely from the image column. Sole
     // arm → composeFusionLists fuses it at vectorK (no text arm to weigh
     // against), exactly as the single-list mapping always did.
-    pushVectorList(vectorArms, imageVectorList, 'image');
+    acceptVector(vectorArms, imageVectorList, 'image');
     queryEmbedding = null; // no text embedding to cosine-re-score against
   } else {
     // 'text' or 'both' (or 'image' that fell open to text). Run the text
@@ -1917,10 +1938,10 @@ export async function hybridSearch(
           }
         }
         // queries[0] is always the caller's query (expandQuery keeps it first).
-        textLists.forEach((list, i) => pushVectorList(vectorArms, list, i === 0 ? 'original' : 'variant'));
+        textLists.forEach((list, i) => acceptVector(vectorArms, list, i === 0 ? 'original' : 'variant'));
         // 'both' mode: also include the image-side list as another input to RRF.
         if (effectiveModality === 'both' && imageVectorList !== null) {
-          pushVectorList(vectorArms, imageVectorList, 'image');
+          acceptVector(vectorArms, imageVectorList, 'image');
         }
       } catch (err) {
         // Embedding failure is non-fatal, fall back to keyword-only —
@@ -2003,12 +2024,12 @@ export async function hybridSearch(
             r.modality = r.modality ?? 'text';
           }
         }
-        okLists.forEach((list, i) => pushVectorList(vectorArms, list, okRoles[i]));
+        okLists.forEach((list, i) => acceptVector(vectorArms, list, okRoles[i]));
         // 'both' mode: also include the image-side list as another input to
         // RRF — only when a text arm survived, matching the pre-wave shape
         // (a total text failure falls back to keyword-only either way).
         if (okLists.length > 0 && effectiveModality === 'both' && imageVectorList !== null) {
-          pushVectorList(vectorArms, imageVectorList, 'image');
+          acceptVector(vectorArms, imageVectorList, 'image');
         }
       }
     }
@@ -2038,6 +2059,7 @@ export async function hybridSearch(
       fallbackResults.sort((a, b) => b.score - a.score);
     }
     const kwPreExact = await applyAliasHop(engine, dedupResults(fallbackResults), query, {
+      completion,
       sourceId: opts?.sourceId,
       sourceIds: opts?.sourceIds,
       excludePrivate: opts?.excludePrivate,
@@ -2045,6 +2067,7 @@ export async function hybridSearch(
     });
     // #1663 — structural exact-lookup tier (slug / exact-title identity).
     const kwHopped = await applyExactLookupTier(engine, kwPreExact, query, {
+      completion,
       sourceId: opts?.sourceId,
       sourceIds: opts?.sourceIds,
       titleCandidates: titleResults,
@@ -2083,7 +2106,7 @@ export async function hybridSearch(
         ? { token_budget: kwBudgetMeta }
         : {}),
     });
-    return kwBudgeted;
+    return finish(kwBudgeted);
   }
 
   // Merge all result lists via RRF (includes normalization + boost)
@@ -2333,6 +2356,7 @@ export async function hybridSearch(
   // declared chosen name reliably surfaces that page regardless of how the
   // reranker scored body chunks. Fail-open on pre-v110 brains.
   const preExact = await applyAliasHop(engine, rerankPinned, query, {
+      completion,
     sourceId: opts?.sourceId,
     sourceIds: opts?.sourceIds,
     excludePrivate: opts?.excludePrivate,
@@ -2346,6 +2370,7 @@ export async function hybridSearch(
   // non-lookup-shaped queries. Runs after the alias hop so all three
   // identity surfaces (alias, slug, title) share the same injection shape.
   const aliasHopped = await applyExactLookupTier(engine, preExact, query, {
+      completion,
     sourceId: opts?.sourceId,
     sourceIds: opts?.sourceIds,
     titleCandidates: titleResults,
@@ -2484,7 +2509,7 @@ export async function hybridSearch(
     ...(keywordArmConfidence ? { keyword_arm_confidence: keywordArmConfidence } : {}),
     metadata_boost_gate: metadataBoostGate,
   });
-  return budgeted;
+  return finish(budgeted, effectiveModality !== 'image');
 }
 
 // ----------------------------------------------------------------------

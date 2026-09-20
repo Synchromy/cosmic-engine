@@ -93,3 +93,7 @@ query even without a callback.
 ## Local native producer-outcome candidate
 
 `feat/native-operation-outcomes-0921` extends the optional generic lifecycle with terminal producer failures and bounded effects after definitive authorization. Only explicit failed-think and restricted-contradiction branches are instrumented here. Search/assembler availability and session cursor effects remain separate. No upstream PR, deployment or paid activation is claimed.
+
+## Local hybrid retrieval-completion foundation
+
+Optional trusted completion evidence follows the selected search/query result through lexical, vector, alias, exact and relational retrieval. Failed required hydration and discarded vector/adaptive/CRAG paths cannot authorize an empty fallback. Standalone behavior and the hard-disabled semantic result cache remain unchanged. This is the first B2b slice only; entity/think/context assemblers, cursor effects and host accounting integration remain prerequisites. The hybrid module ceiling increases 3295 to 3320 solely for the reviewed optional completion plumbing; no unrelated search extraction. Local-only, no upstream/publication or activation claim.

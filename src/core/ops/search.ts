@@ -1,3 +1,4 @@
+import { RetrievalCompletion } from '../retrieval-completion.ts';
 import { readHolders } from './context.ts';
 /**
  * Search operation cluster (search + query) — pure move from operations.ts
@@ -249,7 +250,9 @@ const search: Operation = {
     // Cheap-hybrid (D4/D15): full vector+keyword+RRF+pool+title+alias, but
     // expansion OFF (no per-call LLM cost). `query` op is the full-control variant.
     let capturedMeta: HybridSearchMeta | null = null;
+    const completion = ctx.reportFailure ? new RetrievalCompletion() : undefined;
     const results = await hybridSearchCached(ctx.engine, queryText, {
+      completion,
       limit,
       offset,
       expansion: false,
@@ -264,6 +267,7 @@ const search: Operation = {
       recency: p.recency as 'off' | 'on' | 'strong' | undefined,
       onMeta: (m) => { capturedMeta = m; },
     });
+    if (completion && !completion.seal().completed) { ctx.reportFailure!({ code: 'unavailable' }); return []; }
     stampDeepResearchIds(results);
     const latency_ms = Date.now() - startedAt;
     bumpLastRetrievedAt(ctx.engine, results.map((r) => r.page_id));
@@ -480,7 +484,9 @@ const query: Operation = {
     // token budget and intent weighting apply at the operation boundary.
     // Semantic cache reuse is suspended in the wrapper.
     // (#1663: `let` — the CRAG gate below may swap in an escalated run.)
+    let completion = ctx.reportFailure ? new RetrievalCompletion() : undefined;
     let results = await hybridSearchCached(ctx.engine, queryText, {
+      completion,
       // #4356 — was a hard `|| 20`, independent of the mode-resolution
       // hybridSearchCached applies when `limit` is falsy (undefined OR 0):
       // `opts?.limit || resolvedMode.searchLimit` (hybrid.ts). Passing
@@ -574,7 +580,9 @@ const query: Operation = {
           // the config reads only run on the rare escalation path.
           const effectiveLimit = await resolveEffectiveLimit(ctx, p);
           let escalatedMeta: HybridSearchMeta | null = null;
+          const escalatedCompletion = ctx.reportFailure ? new RetrievalCompletion() : undefined;
           const escalated = await hybridSearchCached(ctx.engine, queryText, {
+            completion: escalatedCompletion,
             excludePrivate,
             requireSafeChunks: ctx.remote !== false,
             takesHoldersAllowList: readHolders(ctx),
@@ -619,6 +627,7 @@ const query: Operation = {
           crag.escalated_confidence = regraded.level;
           if (confidenceRank(regraded.level) > confidenceRank(grade.level)) {
             results = escalated.slice(0, effectiveLimit);
+            completion = escalatedCompletion;
             capturedMeta = escalatedMeta;
             grade = regraded;
             crag.confidence = regraded.level;
@@ -659,6 +668,7 @@ const query: Operation = {
         }
       }
     }
+    if (completion && !completion.seal().completed) { ctx.reportFailure!({ code: 'unavailable' }); return []; }
     const latency_ms = Date.now() - startedAt;
 
     // v0.37.0 (D11): op-layer last_retrieved_at write-back. Same shape as the

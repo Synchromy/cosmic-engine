@@ -1,3 +1,4 @@
+import type { RetrievalCompletion } from '../retrieval-completion.ts';
 /**
  * v0.31 Hot Memory — entity slug canonicalization.
  *
@@ -112,20 +113,23 @@ function fallbackSlugify(trimmed: string): string {
  * Fail-open on undefined-table (pre-v110 brains have no page_aliases table);
  * other errors warn once per process so degradation isn't silent.
  */
+type ResolutionProbes = { completed: number; failed: boolean };
 let aliasExactWarned = false;
-async function tryAliasExact(engine: BrainEngine, source_id: string, raw: string): Promise<string | null> {
+async function tryAliasExact(engine: BrainEngine, source_id: string, raw: string, probes?: ResolutionProbes): Promise<string | null> {
   const norm = normalizeAlias(raw);
   if (!norm) return null;
   try {
     const hits = (await engine.resolveAliases([norm], { sourceId: source_id })).get(norm) ?? [];
-    if (!hits.length) return null;
+    if (!hits.length) { if (probes) probes.completed++; return null; }
     const rows = await engine.executeRaw<{ slug: string }>(
       `SELECT slug FROM pages WHERE deleted_at IS NULL AND source_id = $1 AND slug = ANY($2::text[])`,
       [source_id, [...new Set(hits.map((h) => h.slug))]],
     );
+    if (probes) probes.completed++;
     const live = [...new Set(rows.map((r) => r.slug))];
     return live.length === 1 ? live[0] : null;
   } catch (err) {
+    if (probes) probes.failed = true;
     if (!isUndefinedTableError(err) && !aliasExactWarned) {
       aliasExactWarned = true;
       console.error(`[gbrain] alias-exact resolution degraded (falling through to fuzzy): ${err instanceof Error ? err.message : String(err)}`);
@@ -185,28 +189,32 @@ export async function resolveEntitySlugWithSource(
   engine: BrainEngine,
   source_id: string,
   raw: string,
+  completion?: RetrievalCompletion,
 ): Promise<ResolveResult | null> {
   if (!raw) return null;
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
+  const probes = completion ? { completed: 0, failed: false } : undefined;
+  const found = (slug: string, source: ResolutionSource): ResolveResult => { completion?.complete(); return { slug, source }; };
   // Mirror resolveEntitySlug's resolution chain but tag each branch.
   if (looksLikeSlug(trimmed)) {
-    const exact = await tryExactSlug(engine, source_id, trimmed);
-    if (exact) return { slug: exact, source: 'exact_page' };
+    const exact = await tryExactSlug(engine, source_id, trimmed, probes);
+    if (exact) return found(exact, 'exact_page');
   }
 
-  const aliased = await tryAliasExact(engine, source_id, trimmed);
-  if (aliased) return { slug: aliased, source: 'alias_exact' };
+  const aliased = await tryAliasExact(engine, source_id, trimmed, probes);
+  if (aliased) return found(aliased, 'alias_exact');
 
   if (isBareName(trimmed)) {
-    const expanded = await tryUnambiguousPrefixExpansion(engine, source_id, slugify(trimmed));
-    if (expanded) return { slug: expanded, source: 'fuzzy_match' };
+    const expanded = await tryUnambiguousPrefixExpansion(engine, source_id, slugify(trimmed), probes);
+    if (expanded) return found(expanded, 'fuzzy_match');
   } else {
-    const fuzzy = await tryFuzzyMatch(engine, source_id, trimmed);
-    if (fuzzy) return { slug: fuzzy, source: 'fuzzy_match' };
+    const fuzzy = await tryFuzzyMatch(engine, source_id, trimmed, probes);
+    if (fuzzy) return found(fuzzy, 'fuzzy_match');
   }
 
+  if (probes && probes.completed > 0 && !probes.failed) completion?.complete();
   return { slug: fallbackSlugify(trimmed), source: 'fallback_slugify' };
 }
 
@@ -267,6 +275,7 @@ export async function findPrefixCandidates(
   engine: BrainEngine,
   source_id: string,
   token: string,
+  probes?: ResolutionProbes,
 ): Promise<Array<{ slug: string; connection_count: number }>> {
   if (!token) return [];
   // Build LIKE pattern set for each configured directory:
@@ -298,8 +307,10 @@ export async function findPrefixCandidates(
        LIMIT 10`,
       [source_id, patterns],
     );
+    if (probes) probes.completed++;
     return rows;
   } catch {
+    if (probes) probes.failed = true;
     // Defensive: any SQL hiccup returns "no candidates" so the caller's
     // ambiguity gate doesn't crash the cycle. The downstream
     // `resolvePhantomCanonical` runs the per-dir tryPrefixExpansion path
@@ -312,8 +323,9 @@ async function tryUnambiguousPrefixExpansion(
   engine: BrainEngine,
   source_id: string,
   token: string,
+  probes?: ResolutionProbes,
 ): Promise<string | null> {
-  const candidates = await findPrefixCandidates(engine, source_id, token);
+  const candidates = await findPrefixCandidates(engine, source_id, token, probes);
   return candidates.length === 1 ? candidates[0].slug : null;
 }
 
@@ -395,14 +407,17 @@ async function tryExactSlug(
   engine: BrainEngine,
   source_id: string,
   candidate: string,
+  probes?: ResolutionProbes,
 ): Promise<string | null> {
   try {
     const rows = await engine.executeRaw<{ slug: string }>(
       `SELECT slug FROM pages WHERE source_id = $1 AND slug = $2 AND deleted_at IS NULL LIMIT 1`,
       [source_id, candidate],
     );
+    if (probes) probes.completed++;
     if (rows.length > 0) return rows[0].slug;
   } catch {
+    if (probes) probes.failed = true;
     // Defensive: fail open. Caller still gets a slug from the fallback.
   }
   return null;
@@ -412,6 +427,7 @@ async function tryFuzzyMatch(
   engine: BrainEngine,
   source_id: string,
   raw: string,
+  probes?: ResolutionProbes,
 ): Promise<string | null> {
   const lc = raw.toLowerCase();
   const fragment = slugify(raw);
@@ -436,12 +452,14 @@ async function tryFuzzyMatch(
        LIMIT 3`,
       [source_id, lc, fragment],
     );
+    if (probes) probes.completed++;
     // 0.4 confidently misattributes names that share only a generic company
     // token (for example "Beacon Capital" → "Benton Capital"). Keep fuzzy
     // typo tolerance, but require high-specificity overlap before writing a
     // fact to an existing entity.
     if (rows.length > 0 && rows[0].score >= 0.7) return rows[0].slug;
   } catch {
+    if (probes) probes.failed = true;
     // pg_trgm functions might not be available on every engine config;
     // fall through to slugify.
   }

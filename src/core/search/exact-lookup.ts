@@ -1,3 +1,4 @@
+import type { RetrievalCompletion } from '../retrieval-completion.ts';
 /**
  * #1663 — structural exact-lookup tier (identity resolution before ranking).
  *
@@ -51,6 +52,8 @@ export function isSlugShapedQuery(query: string): boolean {
 }
 
 export interface ExactLookupOpts extends PageReadPolicy {
+  /** Trusted accepted-retrieval evidence, never an operation parameter. */
+  completion?: RetrievalCompletion;
   sourceId?: string;
   sourceIds?: string[];
   /**
@@ -120,7 +123,7 @@ export async function structuralExactLookup(
         const page = scope != null
           ? await engine.getPage(q, { sourceId: scope, excludePrivate: opts.excludePrivate })
           : await engine.getPage(q, { excludePrivate: opts.excludePrivate }); // gbrain-allow-unscoped-getpage — read-only first-match; no paired write
-        if (!page) continue;
+        if (!page) { opts.completion?.complete(); continue; }
         push({
           page_id: page.id,
           slug: page.slug,
@@ -134,6 +137,7 @@ export async function structuralExactLookup(
           alias_hit: true, // identity match — evidence alias_hit → 'exists'
           exact_lookup: 'slug',
         } as SearchResult);
+        opts.completion?.complete();
       } catch {
         // fail-open: slug probe error → no tier hit from this scope
       }
