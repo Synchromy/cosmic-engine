@@ -1,5 +1,6 @@
+import { MAX_OPERATION_EFFECTS } from './operation-delivery-effects.ts';
 import { randomUUID } from 'node:crypto';
-import type { AuthInfo, Operation, OperationContext } from './ops/contract.ts';
+import type { AuthInfo, Operation, OperationContext, OperationFailure, OperationDeliveryEffect } from './ops/contract.ts';
 import type { ToolResult } from '../mcp/dispatch.ts';
 import type { LifecycleFailure, LifecyclePrincipal, OperationAdmission, ReleaseReason } from './operation-lifecycle.ts';
 import { boundedWait, LIFECYCLE_CLEANUP_MS, type LoadedLifecycle } from './operation-lifecycle-loader.ts';
@@ -62,6 +63,9 @@ class RequestScope {
   private ended = false;
   private delivered = false;
   private pageFailure?: LifecycleError;
+  private producerFailure?: LifecycleError;
+  private effectsSealed = false;
+  private readonly effects: OperationDeliveryEffect[] = [];
   private releasePromise?: Promise<void>;
   private stopReason: ReleaseReason = 'deadline';
   private rejectStopped!: (error: LifecycleError) => void;
@@ -104,6 +108,30 @@ class RequestScope {
       throw new LifecycleError('authorization_uncertain');
     }
   }
+  sealHandler(): void { this.effectsSealed = true; }
+  throwIfFailed(): void {
+    this.check();
+    if (this.pageFailure) throw this.pageFailure;
+    if (this.producerFailure) throw this.producerFailure;
+  }
+  private reportProducerFailure(failure: OperationFailure): void {
+    this.check();
+    let valid = false;
+    let code: unknown;
+    try { code = failure?.code; valid = !!failure && Object.keys(failure).length === 1 && (code === 'unavailable' || code === 'refused'); } catch {}
+    this.producerFailure ??= new LifecycleError('handler_error', {
+      code: valid && code === 'refused' ? 'admission_refused' : 'unavailable',
+    });
+    if (!valid) throw this.producerFailure;
+  }
+  private deferEffect(effect: OperationDeliveryEffect): void {
+    this.throwIfFailed();
+    if (this.effectsSealed || typeof effect !== 'function' || !this.loaded.effects || this.effects.length >= MAX_OPERATION_EFFECTS) {
+      this.producerFailure ??= new LifecycleError('authorization_uncertain');
+      throw this.producerFailure;
+    }
+    this.effects.push(effect);
+  }
   async begin(op: Operation, params: Record<string, unknown>, ctx: OperationContext): Promise<boolean> {
     this.check();
     if (this.began) throw new LifecycleError('authorization_uncertain');
@@ -143,13 +171,14 @@ class RequestScope {
     // hostCall may refuse before awaiting; every late begin still has an observer.
     void beginWork.catch(() => {});
     const a = await this.hostCall(() => beginWork);
+    ctx.reportFailure = failure => this.reportProducerFailure(failure);
+    ctx.deferAfterDelivery = effect => this.deferEffect(effect);
     const prior = ctx.beforePageRead;
     ctx.beforePageRead = async target => {
-      if (this.pageFailure) throw this.pageFailure;
+      this.throwIfFailed();
       try {
-        this.check();
         if (prior) await prior(target);
-        this.check();
+        this.throwIfFailed();
         if (a.beforePageRead) {
           const decision = await this.hostCall(() => a.beforePageRead!(target, this.controller.signal));
           if (decision !== undefined) {
@@ -179,7 +208,8 @@ class RequestScope {
       this.check();
       const result = await Promise.race([Promise.resolve().then(work), this.stopped]);
       this.check();
-      if (this.pageFailure) throw this.pageFailure;
+      this.sealHandler();
+      this.throwIfFailed();
       if (result.isError) {
         const admitted = !!this.admission;
         await this.release('handler_error');
@@ -201,7 +231,10 @@ class RequestScope {
       if (!decision || decision.kind !== 'deliver') {
         throw new LifecycleError('host_refusal', decision?.kind === 'refused' ? checkedFailure(decision.failure) : undefined);
       }
+      this.throwIfFailed();
       this.delivered = true;
+      const effects = Object.freeze([...this.effects]);
+      try { this.loaded.effects?.enqueue(effects); } catch { try { this.loaded.reportFailure(); } catch { /* reporting cannot undo delivery */ } }
       return frozen;
     } catch (e) {
       const known = e instanceof LifecycleError ? e : new LifecycleError('invalid_response');
@@ -210,6 +243,8 @@ class RequestScope {
       return failureResult(known.failure);
     } finally {
       this.ended = true;
+      this.effectsSealed = true;
+      this.effects.length = 0;
       scopes.delete(this);
       if (this.timer) clearTimeout(this.timer);
     }

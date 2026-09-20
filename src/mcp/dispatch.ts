@@ -680,7 +680,10 @@ export async function dispatchToolCall(
       assertOperationRequest(opts.operationRequest, ctx);
       allowOptionalEnrichment = await opts.operationRequest.begin(op, safeParams, ctx);
     }
-    const result = await op.handler(ctx, safeParams);
+    let result: unknown;
+    try { result = await op.handler(ctx, safeParams); }
+    finally { opts.operationRequest?.sealHandler(); }
+    opts.operationRequest?.throwIfFailed();
     // [E4] verb success metrics: budget drops + entity hit/miss when present.
     {
       const r = result as { dropped_count?: number; found?: boolean; status?: string } | null;

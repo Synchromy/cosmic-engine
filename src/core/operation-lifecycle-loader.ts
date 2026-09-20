@@ -1,3 +1,4 @@
+import { OperationDeliveryEffects } from './operation-delivery-effects.ts';
 import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -8,6 +9,7 @@ export const LIFECYCLE_INIT_MS = 10_000;
 export const LIFECYCLE_CLEANUP_MS = 5_000;
 export interface LoadedLifecycle {
   readonly host: OperationLifecycleHost;
+  readonly effects?: OperationDeliveryEffects;
   readonly signal: AbortSignal;
   reportFailure(): void;
   shutdown(): Promise<void>;
@@ -36,6 +38,7 @@ export async function loadOperationLifecycle(
   if (path === undefined) return undefined;
   const controller = new AbortController();
   let host: OperationLifecycleHost | undefined;
+  let effects: OperationDeliveryEffects | undefined;
   let shutdownCandidate: (() => Promise<void>) | undefined;
   let abandoned = false;
   let cleanupPromise: Promise<void> | undefined;
@@ -44,10 +47,12 @@ export async function loadOperationLifecycle(
   };
   const cleanup = (): Promise<void> => {
     controller.abort();
+    effects?.stop();
     if (!shutdownCandidate) return Promise.resolve();
     if (!cleanupPromise) {
       const close = shutdownCandidate;
-      cleanupPromise = boundedWait(Promise.resolve().then(close),
+      cleanupPromise = boundedWait(Promise.allSettled([Promise.resolve().then(close), effects?.drain() ?? Promise.resolve()])
+        .then(results => { if (results.some(r => r.status === 'rejected')) report('cleanup_failure'); }),
         Math.min(host?.limits.shutdownTimeoutMs ?? LIFECYCLE_CLEANUP_MS, LIFECYCLE_CLEANUP_MS))
         .catch(() => { report('cleanup_failure'); });
     }
@@ -78,9 +83,10 @@ export async function loadOperationLifecycle(
       begin: candidate.begin.bind(candidate),
       shutdown: shutdownCandidate!,
     });
+    effects = new OperationDeliveryEffects(Math.min(host.limits.shutdownTimeoutMs, LIFECYCLE_CLEANUP_MS), () => report('host_failure'));
     if (abandoned) { void cleanup(); throw new Error('Late lifecycle initialization'); }
     report('initialized');
-    return { host, signal: controller.signal, shutdown: cleanup, reportFailure: () => report('host_failure') };
+    return { host, effects, signal: controller.signal, shutdown: cleanup, reportFailure: () => report('host_failure') };
   };
   try { return await boundedWait(initialize(), LIFECYCLE_INIT_MS); }
   catch {

@@ -249,7 +249,13 @@ export interface AuthInfo {
   surfaceSetBy?: string;
 }
 
+export type OperationFailure = Readonly<{ code: 'unavailable' | 'refused' }>;
+export type OperationDeliveryEffect = (signal: AbortSignal) => Promise<void>;
+
 export interface OperationContext {
+  /** Trusted lifecycle only. Never populated from caller params or metadata. */
+  reportFailure?(failure: OperationFailure): void;
+  deferAfterDelivery?(effect: OperationDeliveryEffect): void;
   /** Host-owned admission, never copied from caller params. Refusal throws.
    * Runs after authorized resolution and before any body or retrieval stamp. */
   beforePageRead?: (target: PageReadTarget) => Promise<void>;

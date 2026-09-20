@@ -196,6 +196,7 @@ const find_contradictions: Operation = {
   handler: async (ctx, p) => {
     const scope = sourceScopeOpts(ctx);
     if (ctx.remote !== false || scope.sourceId !== undefined || scope.sourceIds !== undefined) {
+      ctx.reportFailure?.({ code: 'refused' });
       return { contradictions: [], note: 'Stored contradiction reports are temporarily available only to trusted local callers without a source filter.' };
     }
 

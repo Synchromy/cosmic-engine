@@ -89,3 +89,7 @@ query even without a callback.
 ## Local native lifecycle candidate
 
 `feat/native-operation-lifecycle-0921` adds optional generic trusted-host lifecycle admission for native HTTP tools. Source and actual compiled executable use the same external-module path. This local candidate has no upstream PR or deployment. Producer outcomes, proprietary accounting and internal-subcall propagation remain separate prerequisites before a paid host is enabled.
+
+## Local native producer-outcome candidate
+
+`feat/native-operation-outcomes-0921` extends the optional generic lifecycle with terminal producer failures and bounded effects after definitive authorization. Only explicit failed-think and restricted-contradiction branches are instrumented here. Search/assembler availability and session cursor effects remain separate. No upstream PR, deployment or paid activation is claimed.

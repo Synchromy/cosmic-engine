@@ -185,6 +185,8 @@ export async function createOperationLifecycleHost(ports) {
         expect((await events()).filter(x => x.event === 'begin')).toHaveLength(0);
         const refused = await post(call(3, 'refuse'));
         expect(await refused.text()).toContain('Synthetic top-up guidance');
+        const producerRefused = await post({ jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'find_contradictions', arguments: {} } });
+        expect(await producerRefused.text()).toContain('admission_refused');
         const response = await post([call(4, 'slow'), call(5, 'fast')]);
         expect(response.headers.get('content-type')).toContain('text/event-stream');
         const reader = response.body!.getReader();
@@ -204,9 +206,9 @@ export async function createOperationLifecycleHost(ports) {
         expect(observed[0].resource).toBe(base + '/mcp');
         expect(observed[0].operations).toBeGreaterThan(100);
         const attempts = observed.filter(x => x.event === 'begin');
-        expect(new Set(attempts.map(x => x.attempt)).size).toBe(3);
+        expect(new Set(attempts.map(x => x.attempt)).size).toBe(4);
         expect(JSON.stringify(attempts)).not.toContain(token);
-        expect(observed.filter(x => x.event === 'release')).toHaveLength(0);
+        expect(observed.filter(x => x.event === 'release')).toHaveLength(1);
       } finally { await stop(); }
       expect(forcedCleanup).toBe(false);
       // Natural serve teardown can exit0 before the shared SIGTERM handler exits143.

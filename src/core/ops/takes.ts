@@ -232,6 +232,10 @@ const think: Operation = {
       remote: ctx.remote !== false, // fail-closed: anything not strictly false is untrusted (CLAUDE.md invariant)
     });
 
+    if (result.synthesisOk === false || (result.synthesis_status !== undefined && result.synthesis_status !== 'ok')) {
+      ctx.reportFailure?.({ code: 'unavailable' });
+    }
+
     // Persist if --save was passed locally
     let savedSlug: string | undefined;
     let evidenceInserted = 0;
