@@ -1,3 +1,4 @@
+import { RetrievalCompletion } from '../retrieval-completion.ts';
 /**
  * v0.28: `gbrain think` — INTENT → GATHER → SYNTHESIZE → (optional) COMMIT.
  *
@@ -56,6 +57,8 @@ export function classifyLlmCallFailure(e: unknown): LlmCallFailureClass {
 }
 
 export interface RunThinkOpts {
+  /** Trusted retrieval evidence, independent of synthesis success. */
+  completion?: RetrievalCompletion;
   question: string;
   /** Anchor entity slug. Activates the graph stream + entity-focused prompt. */
   anchor?: string;
@@ -480,6 +483,11 @@ export async function runThink(
   engine: BrainEngine,
   opts: RunThinkOpts,
 ): Promise<ThinkResult> {
+  const completion = opts.completion ? new RetrievalCompletion() : undefined;
+  const finish = (result: ThinkResult): ThinkResult => {
+    if (completion) opts.completion!.accept(completion.seal());
+    return result;
+  };
   const rounds = Math.max(1, opts.rounds ?? 1);
   const warnings: string[] = [];
   const window = parseTemporalWindow(opts.since, opts.until);
@@ -521,7 +529,9 @@ export async function runThink(
   }
 
   // GATHER
+  const gatherCompletion = completion ? new RetrievalCompletion() : undefined;
   const gather = await runGather(engine, {
+    completion: gatherCompletion,
     question: opts.question,
     anchor: opts.anchor,
     questionEmbedding,
@@ -553,6 +563,8 @@ export async function runThink(
   const graphBlock = gather.graphSlugs.length > 0
     ? `<anchor>${opts.anchor}</anchor>\nReachable: ${gather.graphSlugs.slice(0, 30).join(', ')}`
     : undefined;
+
+  if (gatherCompletion) completion!.accept(gatherCompletion.seal());
 
   // v0.36.1.0 (E1) — optional calibration profile retrieval. When enabled
   // and a profile exists, inject it per D22 (after retrieval, before question).
@@ -597,6 +609,7 @@ export async function runThink(
   const trajectoryEnabledOpt = opts.withTrajectory !== false; // default true
   if (trajectoryEnabledConfig && trajectoryEnabledOpt) {
     try {
+      const trajectoryCompletion = completion ? new RetrievalCompletion() : undefined;
       const { classifyIntent } = await import('./intent.ts');
       const trajIntent = classifyIntent(opts.question);
       if (trajIntent === 'temporal' || trajIntent === 'knowledge_update') {
@@ -625,8 +638,9 @@ export async function runThink(
                 if (seenSlugs.has(resolved.slug)) return null;
                 seenSlugs.add(resolved.slug);
                 // 5s per-candidate timeout. Promise.race resolves with the
-                // first to land; the timeout returns [] (empty trajectory).
-                const points = await Promise.race([
+                // first to land; only a completed query supplies retrieval evidence.
+                let timer: ReturnType<typeof setTimeout> | undefined;
+                const outcome = await Promise.race([
                   engine.findTrajectory({
                     entitySlug: resolved.slug,
                     ...(opts.sourceId !== undefined ? { sourceId: opts.sourceId } : {}),
@@ -634,11 +648,13 @@ export async function runThink(
                     ...(opts.remote !== undefined ? { remote: opts.remote } : {}),
                     kind: 'all',
                     limit: 100,
+                  }).then(points => ({ kind: 'completed' as const, points })),
+                  new Promise<{ kind: 'timeout' }>(resolve => {
+                    timer = setTimeout(() => resolve({ kind: 'timeout' }), 5000);
                   }),
-                  new Promise<import('../engine.ts').TrajectoryPoint[]>(resolve => {
-                    setTimeout(() => resolve([]), 5000);
-                  }),
-                ]);
+                ]).finally(() => { if (timer !== undefined) clearTimeout(timer); });
+                if (outcome.kind === 'timeout') return null;
+                const points = outcome.points;
                 const boundedPoints = window ? points.filter(point => {
                   const ms = point.valid_from.getTime();
                   const outside = (window.startMs !== null && ms < window.startMs)
@@ -646,17 +662,18 @@ export async function runThink(
                   if (outside) trajectoryExcludedCount++;
                   return !outside;
                 }) : points;
-                if (boundedPoints.length === 0) return null;
+                if (boundedPoints.length === 0) return { rendered: '', points: 0 };
                 const fmt = formatTrajectoryBlock(boundedPoints, resolved.slug, {
                   intent: trajIntent,
                 });
-                if (fmt.rendered.length === 0) return null;
+                if (fmt.rendered.length === 0) return { rendered: '', points: 0 };
                 return { rendered: fmt.rendered, points: fmt.emittedPoints };
               }),
             );
             for (const s of settled) {
               if (s.status !== 'fulfilled' || s.value === null) continue;
-              allBlocks.push(s.value.rendered);
+              trajectoryCompletion?.complete();
+              if (s.value.rendered.length > 0) allBlocks.push(s.value.rendered);
               totalPoints += s.value.points;
             }
           }
@@ -666,6 +683,7 @@ export async function runThink(
           }
         }
       }
+      if (trajectoryCompletion) completion!.accept(trajectoryCompletion.seal());
     } catch (err) {
       // Defensive: trajectory injection is best-effort. Any unexpected
       // error degrades to "no trajectory block" + a warning. The think
@@ -748,7 +766,7 @@ export async function runThink(
       // the stub answer. Null on empty gather (never fabricate).
       const stubExtractive = composeExtractiveFallback(gather.pages, opts.question);
       // Degrade gracefully: return the gather without synthesis. Better than throwing.
-      return {
+      return finish({
         question: opts.question,
         answer: modelProblem
           ? `(model "${modelUsed}" not usable — ${detail}${fix})`
@@ -775,7 +793,7 @@ export async function runThink(
           takesFromVector: gather.diagnostics.takesFromVector,
           graphHits: gather.diagnostics.graphHits,
         },
-      };
+      });
     }
     let created: Anthropic.Message | null = null;
     try {
@@ -899,7 +917,7 @@ export async function runThink(
     ? composeExtractiveFallback(gather.pages, opts.question)
     : null;
 
-  return {
+  return finish({
     question: opts.question,
     answer: response.answer,
     citations: resolved.citations,
@@ -922,7 +940,7 @@ export async function runThink(
       takesFromVector: gather.diagnostics.takesFromVector,
       graphHits: gather.diagnostics.graphHits,
     },
-  };
+  });
 }
 
 /**

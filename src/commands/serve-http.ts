@@ -1,3 +1,8 @@
+import { executeCompositeHttp, prepareCompositeChild, markCompositeAdmission, internalRefusal } from '../core/operation-composite-http.ts';
+import { COMPOSITE_PATH, hasInternalHeaders } from '../core/operation-original-envelope.ts';
+import { loadOperationLifecycle, LIFECYCLE_MODULE_ENV, type LoadedLifecycle } from '../core/operation-lifecycle-loader.ts';
+import { runOperationRequest } from '../core/operation-lifecycle-runner.ts';
+import { resourcePolicyFromEnvironment } from '../core/oauth-resource-policy.ts';
 /**
  * GBrain HTTP MCP server with OAuth 2.1.
  *
@@ -896,7 +901,10 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
     dcrTtlMaxSeconds = dcrTtlMinSeconds;
   }
 
+  const resourcePolicy = resourcePolicyFromEnvironment(process.env.GBRAIN_OAUTH_RESOURCE_POLICY, publicUrl);
+  let operationLifecycle: LoadedLifecycle | undefined;
   const oauthProvider = new GBrainOAuthProvider({
+    resourcePolicy,
     sql,
     tokenTtl,
     dcrDisabled: !enableDcr,
@@ -2343,9 +2351,18 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
     res.status(405).json({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed' }, id: null });
   });
 
-  app.post('/mcp', requireBearerAuth({ verifier: oauthProvider, resourceMetadataUrl }), async (req: Request, res: Response) => {
+  app.post(COMPOSITE_PATH, (req: Request, _res: Response, next: () => void) => { markCompositeAdmission(req); next(); },
+    requireBearerAuth({ verifier: oauthProvider, resourceMetadataUrl }),
+    (req: Request, res: Response) => executeCompositeHttp(req, res, operationLifecycle, resourcePolicy?.canonicalResource ?? '', `http://127.0.0.1:${port}/mcp`));
+
+  app.post('/mcp', (req: Request, _res: Response, next: () => void) => { markCompositeAdmission(req); next(); }, requireBearerAuth({ verifier: oauthProvider, resourceMetadataUrl }), async (req: Request, res: Response) => {
     const startTime = Date.now();
     const authInfo = (req as any).auth as AuthInfo;
+    let child: Awaited<ReturnType<typeof prepareCompositeChild>> | undefined;
+    if (hasInternalHeaders(req.headers)) {
+      try { child = await prepareCompositeChild(req, operationLifecycle); }
+      catch { internalRefusal(res); return; }
+    }
 
     // Human-readable agent name is now threaded through AuthInfo by
     // verifyAccessToken (which JOINs oauth_clients in its existing token
@@ -2465,7 +2482,8 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
       return { tools };
     });
 
-    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    server.setRequestHandler(CallToolRequestSchema, async (request) => runOperationRequest(
+      child?.lifecycle ?? operationLifecycle, resourcePolicy?.canonicalResource ?? '', authInfo, req, res, async (operationRequest) => {
       const { name, arguments: params } = request.params;
       const op = mcpOperations.find(o => o.name === name);
       if (!op) {
@@ -2614,6 +2632,7 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
           sourceId: tokenSourceId,
           ...(localFederated ? { localFederatedSourceIds: localFederated } : {}),
           metaHook: getBrainHotMemoryMeta,
+          ...(operationRequest ? { operationRequest } : {}),
           // MEMORY_VERBS v1: fail-closed surface enforcement + usage attribution.
           ...(surfaceAllowedOps ? { allowedOps: surfaceAllowedOps } : {}),
           surface,
@@ -2724,7 +2743,7 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
         timestamp: new Date().toISOString(),
       });
       return toolResult;
-    });
+    }, child?.deadlineAt));
 
     // F14: wrap transport setup + handleRequest in try/catch. Without this,
     // an SDK-level throw (e.g., schema parse failure on a malformed request)
@@ -2737,7 +2756,7 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
       // #2844: per-request teardown (SDK stateless pattern) — without it every POST /mcp leaks the transport+Server pair (~3GB/day RSS). Registered BEFORE connect/handleRequest so early disconnects and handleRequest throws still clean up; best-effort catches so cleanup never surfaces an unhandledRejection.
       res.on('close', () => { transport.close().catch(() => {}); server.close().catch(() => {}); });
       await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
+      await transport.handleRequest(req, res, child?.original ?? req.body);
     } catch (e) {
       console.error('MCP request handler error:', e instanceof Error ? e.message : e);
       if (!res.headersSent) {
@@ -3328,6 +3347,17 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
   // ---------------------------------------------------------------------------
   const clientCount = await sql`SELECT count(*)::int as count FROM oauth_clients`;
 
+  operationLifecycle = await loadOperationLifecycle(process.env[LIFECYCLE_MODULE_ENV], {
+    engine, resource: resourcePolicy?.canonicalResource ?? '',
+    operations: Object.freeze(mcpOperationsBase.map(op => Object.freeze({
+      name: op.name, scope: op.scope ?? 'read', mutating: op.mutating === true,
+    }))),
+    report: event => console.error(`[operation-lifecycle] ${event}`),
+  });
+  const deregisterLifecycle = operationLifecycle
+    ? registerCleanup('operation-lifecycle', () => operationLifecycle!.shutdown())
+    : () => {};
+  try {
   const httpServer = app.listen(port, bind, () => {
     console.error(`
 ╔══════════════════════════════════════════════════════╗
@@ -3395,5 +3425,9 @@ ${bootstrapFromEnv
     ipcBinding.close();
     deregisterIpcCleanup();
     deregisterEngineCleanup();
+  }
+  } finally {
+    await operationLifecycle?.shutdown();
+    deregisterLifecycle();
   }
 }

@@ -1,3 +1,5 @@
+import { readPageIdentity, type PageReadIdentity } from './page-read-identity.ts';
+import type { GetPageOpts } from './types.ts';
 import type { PageReadScope } from './types.ts';
 import type { PageReadPolicy } from './types.ts';
 import { readRelationalFanout, readAliases, readBacklinkCounts, readAdjacencyBoosts, readContentFlags, readExtractionStates, readEffectiveDates, readSalienceScores } from './search/read-enrichment.ts';
@@ -668,7 +670,12 @@ export class PostgresEngine implements BrainEngine {
   }
 
   // Pages CRUD
-  async getPage(slug: string, opts?: { sourceId?: string; sourceIds?: string[]; includeDeleted?: boolean; excludePrivate?: boolean }): Promise<Page | null> {
+  async getPageIdentity(slug: string, opts?: GetPageOpts): Promise<PageReadIdentity | null> {
+    return this.withScopedReadTransaction(opts?.sourceIds, opts?.sourceId, tx =>
+      readPageIdentity(async (text, values) => [...await tx.unsafe(text, values)], slug, opts));
+  }
+
+  async getPage(slug: string, opts?: GetPageOpts): Promise<Page | null> {
     const includeDeleted = opts?.includeDeleted === true;
     const sourceId = opts?.sourceId;
     const sourceIds = opts?.sourceIds;
@@ -689,6 +696,7 @@ export class PostgresEngine implements BrainEngine {
             ? tx`AND source_id = ${sourceId}`
             : tx``;
       const deletedCondition = includeDeleted ? tx`` : tx`AND deleted_at IS NULL`;
+      const identity = opts?.expectedPageId === undefined ? tx`` : tx`AND id = ${opts.expectedPageId}`;
       const privacy = opts?.excludePrivate ? tx.unsafe(`AND ${privatePagesFilterFragment('pages')}`) : tx``;
       // #3931: anchor on sourceIds[0] (caller's own resolved source, see
       // localFederatedSourceIds) instead of a hardcoded 'default'.
@@ -699,7 +707,7 @@ export class PostgresEngine implements BrainEngine {
                source_kind, source_uri, ingested_via, ingested_at,
                contextual_retrieval_mode
         FROM pages
-        WHERE slug = ${slug} ${sourceCondition} ${deletedCondition} ${privacy}
+        WHERE slug = ${slug} ${sourceCondition} ${deletedCondition} ${privacy} ${identity}
         ORDER BY (source_id = ${anchorSourceId}) DESC, source_id ASC
         LIMIT 1
       `;

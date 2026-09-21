@@ -1,3 +1,4 @@
+import { RetrievalCompletion } from '../retrieval-completion.ts';
 /**
  * v0.28: GATHER phase for `gbrain think`.
  *
@@ -25,6 +26,8 @@ import { ensureWellFormed } from '../text-safe.ts';
 import { CJK_SLUG_CHARS } from '../cjk.ts';
 
 export interface ThinkGatherOpts {
+  /** Trusted outcome evidence, never a caller parameter. */
+  completion?: RetrievalCompletion;
   question: string;
   /** Anchor entity slug. When set, the graph stream activates. */
   anchor?: string;
@@ -116,6 +119,9 @@ export async function runGather(
   engine: BrainEngine,
   opts: ThinkGatherOpts,
 ): Promise<ThinkGatherResult> {
+  const completion = opts.completion ? new RetrievalCompletion() : undefined;
+  const hybridCompletion = completion ? new RetrievalCompletion() : undefined;
+  const floorCompletion = completion ? new RetrievalCompletion() : undefined;
   const gatherLimit = opts.gatherLimit ?? 40;
   const takesLimit = opts.takesLimit ?? 30;
   const graphDepth = opts.graphDepth ?? 2;
@@ -153,6 +159,7 @@ export async function runGather(
   // ops/search.ts; precision trimming is the synth prompt's job here.
   const pagesPromise = (window ? Promise.all([
     hybridSearch(engine, opts.question, {
+      completion: hybridCompletion,
       limit: Math.min(gatherLimit * 4, 200),
       expansion: false,
       autocut: false,
@@ -162,7 +169,11 @@ export async function runGather(
       ...(window.startMs !== null ? { effective_after: new Date(window.startMs).toISOString() } : {}),
       ...(window.endMs !== null ? { effective_before: new Date(window.endMs).toISOString() } : {}),
       limit: 50, ...pageScope,
-    }).then(pages => pages.map(toSearchResult)).catch((e) => {
+    }).then(pages => {
+      const rows = pages.map(toSearchResult);
+      floorCompletion?.complete();
+      return rows;
+    }).catch((e) => {
       warnings.push('GATHER_WINDOW_FLOOR_FAILED');
       process.stderr.write(`[think.gather] window floor failed: ${(e as Error).message}\n`);
       return [] as SearchResult[];
@@ -172,12 +183,19 @@ export async function runGather(
     const combined = [...hybrid, ...floor].filter(page => !seen.has(page.slug) && !!seen.add(page.slug));
     const filtered = filterPagesToWindow(combined, window);
     windowDiagnostic = { dropped: filtered.droppedOutOfWindow, undatedKept: filtered.undatedKept };
-    return filtered.kept.slice(0, gatherLimit);
+    const selected = filtered.kept.slice(0, gatherLimit);
+    if (hybridCompletion) completion!.accept(hybridCompletion.seal());
+    if (floorCompletion) completion!.accept(floorCompletion.seal());
+    return selected;
   }) : hybridSearch(engine, opts.question, {
+    completion: hybridCompletion,
     limit: gatherLimit,
     expansion: false,
     autocut: false,
     ...pageScope,
+  }).then(pages => {
+    if (hybridCompletion) completion!.accept(hybridCompletion.seal());
+    return pages;
   })).catch((e) => {
     warnings.push('GATHER_HYBRID_FAILED');
     process.stderr.write(`[think.gather] hybrid stream failed: ${(e as Error).message}\n`);
@@ -188,7 +206,7 @@ export async function runGather(
   const takesKwPromise = engine.searchTakes(opts.question, {
     limit: takesLimit,
     ...pageScope,
-  }).catch((e) => {
+  }).then(rows => { completion?.complete(); return rows; }).catch((e) => {
     warnings.push('GATHER_TAKES_KEYWORD_FAILED');
     process.stderr.write(`[think.gather] takes-keyword stream failed: ${(e as Error).message}\n`);
     return [] as TakeHit[];
@@ -199,7 +217,7 @@ export async function runGather(
     ? engine.searchTakesVector(opts.questionEmbedding, {
         limit: takesLimit,
         ...pageScope,
-      }).catch((e) => {
+      }).then(rows => { completion?.complete(); return rows; }).catch((e) => {
         warnings.push('GATHER_TAKES_VECTOR_FAILED');
         process.stderr.write(`[think.gather] takes-vector stream failed: ${(e as Error).message}\n`);
         return [] as TakeHit[];
@@ -215,7 +233,9 @@ export async function runGather(
             slugs.add(p.from_slug);
             slugs.add(p.to_slug);
           }
-          return Array.from(slugs);
+          const selected = Array.from(slugs);
+          completion?.complete();
+          return selected;
         })
         .catch((e) => {
           warnings.push('GATHER_GRAPH_FAILED');
@@ -231,7 +251,7 @@ export async function runGather(
   // compiled_truth always reaches the <pages> block.
   let anchorHydrateFailed = false;
   const anchorPagePromise: Promise<Page | null> = opts.anchor
-    ? engine.getPage(opts.anchor, pageScope).catch((e) => {
+    ? engine.getPage(opts.anchor, pageScope).then(page => { completion?.complete(); return page; }).catch((e) => {
         anchorHydrateFailed = true;
         warnings.push('GATHER_ANCHOR_HYDRATE_FAILED');
         process.stderr.write(`[think.gather] anchor hydrate failed: ${(e as Error).message}\n`);
@@ -277,7 +297,7 @@ export async function runGather(
     (h: TakeHit) => `${h.page_slug}#${h.row_num}`,
   ).slice(0, takesLimit);
 
-  return {
+  const result: ThinkGatherResult = {
     pages: pages.slice(0, gatherLimit),
     takes: fusedTakes,
     graphSlugs,
@@ -291,6 +311,8 @@ export async function runGather(
       ...(windowDiagnostic ? { window: windowDiagnostic } : {}),
     },
   };
+  if (completion) opts.completion!.accept(completion.seal());
+  return result;
 }
 
 const EXCERPT_STOP_WORDS = new Set([

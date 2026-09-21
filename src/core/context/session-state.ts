@@ -13,8 +13,8 @@
  * Key is (source_id, client_id, session_id). `client_id` is the caller's OAuth
  * client id for remote callers, or the 'local' sentinel for the trusted CLI/hook
  * path — so two remote harnesses in one source can never stomp/read each other's
- * cursor (eng 1B). All reads/writes are FAIL-OPEN: state is an optimization, and
- * a failure here must never block the recall read path.
+ * cursor (eng 1B). Standalone reads/writes are FAIL-OPEN. Configured delivery
+ * distinguishes unavailable state from absence and defers conditional writes.
  */
 
 import type { BrainEngine } from '../engine.ts';
@@ -111,6 +111,104 @@ export async function getSessionContextState(
   } catch {
     return null;
   }
+}
+
+
+export type SessionCursorExpected =
+  | Readonly<{ status: 'absent' }>
+  | Readonly<{ status: 'present'; lastWakeAt: string | null; cursorSlug: string | null }>;
+export type SessionCursorRead =
+  | Readonly<{ status: 'absent' }>
+  | Readonly<{ status: 'unavailable' }>
+  | Readonly<{ status: 'present'; state: SessionContextState; expected: SessionCursorExpected & { status: 'present' } }>;
+export type SessionCursorDesired = Readonly<{ lastWakeAt: string; cursorSlug?: string }>;
+
+function cursorStrings(value: unknown): string[] | null {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    return Array.isArray(parsed) && parsed.every(v => typeof v === 'string') ? [...parsed] : null;
+  } catch { return null; }
+}
+
+function cursorTimestamp(value: unknown): value is string | null {
+  if (value === null) return true;
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(value)) return false;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 19) === value.slice(0, 19);
+}
+
+/** Authoritative delivery read. The tolerant standalone reader above remains unchanged. */
+export async function readSessionContextStateForDelivery(
+  engine: BrainEngine, sourceId: string, clientId: string | null | undefined, sessionId: string,
+): Promise<SessionCursorRead> {
+  try {
+    const rows = await engine.executeRaw<{
+      standing_entities: unknown; surfaced_slugs: unknown; last_wake_at: unknown; cursor_slug: unknown;
+    }>(
+      `SELECT standing_entities, surfaced_slugs,
+              to_char(last_wake_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS last_wake_at,
+              surfaced_slugs->>0 AS cursor_slug
+       FROM session_context_state WHERE source_id = $1 AND client_id = $2 AND session_id = $3`,
+      [sourceId, resolveClientId(clientId), normSession(sessionId)],
+    );
+    if (!rows.length) return { status: 'absent' };
+    if (rows.length !== 1) return { status: 'unavailable' };
+    const r = rows[0];
+    const standing = cursorStrings(r.standing_entities), surfaced = cursorStrings(r.surfaced_slugs);
+    if (!standing || !surfaced || !cursorTimestamp(r.last_wake_at)
+      || !(r.cursor_slug === null || typeof r.cursor_slug === 'string')
+      || (surfaced[0] ?? null) !== r.cursor_slug) return { status: 'unavailable' };
+    return {
+      status: 'present',
+      state: { standing_entities: standing, surfaced_slugs: surfaced, last_wake_at: r.last_wake_at },
+      expected: Object.freeze({ status: 'present', lastWakeAt: r.last_wake_at, cursorSlug: r.cursor_slug }),
+    };
+  } catch { return { status: 'unavailable' }; }
+}
+
+/** One atomic conditional write; conflicts never fall back to a blind upsert. */
+export async function compareAndSwapSessionContextCursor(
+  engine: BrainEngine, sourceId: string, clientId: string | null | undefined, sessionId: string,
+  expected: SessionCursorExpected, desired: SessionCursorDesired,
+): Promise<'applied' | 'not_applied' | 'unavailable'> {
+  try {
+    const values = [sourceId, resolveClientId(clientId), normSession(sessionId), desired.lastWakeAt,
+      JSON.stringify(desired.cursorSlug === undefined ? [] : [desired.cursorSlug.slice(0, ID_MAX_LEN)])];
+    const rows = expected.status === 'absent'
+      ? await engine.executeRaw(
+          `INSERT INTO session_context_state
+             (source_id, client_id, session_id, standing_entities, surfaced_slugs, last_wake_at, updated_at)
+           VALUES ($1, $2, $3, '[]'::jsonb, $5::text::jsonb, $4::text::timestamptz, now())
+           ON CONFLICT (source_id, client_id, session_id) DO NOTHING RETURNING 1 AS applied`, values)
+      : await engine.executeRaw(
+          `UPDATE session_context_state SET last_wake_at = $4::text::timestamptz,
+             surfaced_slugs = CASE WHEN $6::boolean THEN $5::text::jsonb ELSE surfaced_slugs END,
+             updated_at = now()
+           WHERE source_id = $1 AND client_id = $2 AND session_id = $3
+             AND last_wake_at IS NOT DISTINCT FROM $7::text::timestamptz
+             AND (surfaced_slugs->>0) IS NOT DISTINCT FROM $8::text
+           RETURNING 1 AS applied`,
+          [...values, desired.cursorSlug !== undefined, expected.lastWakeAt, expected.cursorSlug]);
+    return rows.length ? 'applied' : 'not_applied';
+  } catch { return 'unavailable'; }
+}
+
+/** Capture only normalized identity and copied cursor operands, never a response body. */
+export function createSessionCursorDeliveryEffect(
+  engine: BrainEngine, sourceId: string, clientId: string | null | undefined, sessionId: string,
+  expected: SessionCursorExpected, desired: SessionCursorDesired, firstWake = false,
+): (signal: AbortSignal) => Promise<void> {
+  const namespace = Object.freeze({ sourceId, clientId: resolveClientId(clientId), sessionId: normSession(sessionId) });
+  const observed: SessionCursorExpected = Object.freeze(expected.status === 'absent' ? { status: 'absent' }
+    : { status: 'present', lastWakeAt: expected.lastWakeAt, cursorSlug: expected.cursorSlug });
+  const target = Object.freeze({ lastWakeAt: desired.lastWakeAt,
+    ...(desired.cursorSlug === undefined ? {} : { cursorSlug: desired.cursorSlug }) });
+  return async signal => {
+    if (signal.aborted) return;
+    const result = await compareAndSwapSessionContextCursor(engine, namespace.sourceId, namespace.clientId, namespace.sessionId, observed, target);
+    if (result === 'unavailable') throw new Error('Session cursor update unavailable');
+    if (result === 'applied' && firstWake && !signal.aborted) await gcSessionContextState(engine, undefined, undefined, signal);
+  };
 }
 
 /**
@@ -308,12 +406,15 @@ export async function gcSessionContextState(
   engine: BrainEngine,
   olderThanDays = 7,
   maxRowsPerClient = MAX_ROWS_PER_CLIENT,
+  signal?: AbortSignal,
 ): Promise<void> {
   try {
+    if (signal?.aborted) return;
     await engine.executeRaw(
       `DELETE FROM session_context_state WHERE updated_at < now() - ($1 || ' days')::interval`,
       [String(Math.max(1, Math.floor(olderThanDays)))],
     );
+    if (signal?.aborted) return;
     // Per-client LRU cap: keep the newest `maxRowsPerClient` rows per lane.
     await engine.executeRaw(
       `DELETE FROM session_context_state s

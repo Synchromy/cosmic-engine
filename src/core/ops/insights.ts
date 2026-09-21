@@ -1,3 +1,4 @@
+import { RetrievalCompletion } from '../retrieval-completion.ts';
 /**
  * Insight-read operation cluster — pure move from operations.ts (v0.46.x
  * tranche 3): the v0.43 push-based-context op (volunteer_context) plus the
@@ -66,7 +67,13 @@ const volunteer_context: Operation = {
     const sourceIds = scope.sourceIds ?? (scope.sourceId ? [scope.sourceId] : ['default']);
 
     if (p.stats === true) {
-      return volunteerUsageStats(ctx.engine, sourceIds, typeof p.days === 'number' ? p.days : undefined);
+      const completion = ctx.reportFailure ? new RetrievalCompletion() : undefined;
+      const result = await volunteerUsageStats(ctx.engine, sourceIds, typeof p.days === 'number' ? p.days : undefined, completion);
+      if (completion && !completion.seal().completed) {
+        ctx.reportFailure!({ code: 'unavailable' });
+        return {};
+      }
+      return result;
     }
 
     if (typeof p.window !== 'string' || !p.window.trim()) {
@@ -79,7 +86,9 @@ const volunteer_context: Operation = {
     const turns = parseWindow(p.window);
     const { loadConfig: loadCfgForArms } = await import('../config.ts');
     const { lexicalArmsEnabled } = await import('../context/reflex.ts');
+    const completion = ctx.reportFailure ? new RetrievalCompletion() : undefined;
     const pages = await volunteerContext(ctx.engine, turns, {
+      completion,
       sourceIds,
       priorContext: typeof p.prior_context === 'string' ? p.prior_context : undefined,
       maxPages: typeof p.max_pages === 'number' ? p.max_pages : undefined,
@@ -88,6 +97,11 @@ const volunteer_context: Operation = {
       // surname) — file-plane gate, threaded per ResolvePointersOpts.
       lexicalArms: lexicalArmsEnabled(loadCfgForArms()),
     });
+
+    if (completion && !completion.seal().completed) {
+      ctx.reportFailure!({ code: 'unavailable' });
+      return {};
+    }
 
     // Feedback-loop logging: fire-and-forget batched INSERT through the
     // volunteer-events sink (drained at exit). Never fails the op.
@@ -196,6 +210,7 @@ const find_contradictions: Operation = {
   handler: async (ctx, p) => {
     const scope = sourceScopeOpts(ctx);
     if (ctx.remote !== false || scope.sourceId !== undefined || scope.sourceIds !== undefined) {
+      ctx.reportFailure?.({ code: 'refused' });
       return { contradictions: [], note: 'Stored contradiction reports are temporarily available only to trusted local callers without a source filter.' };
     }
 

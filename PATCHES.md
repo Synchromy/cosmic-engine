@@ -61,3 +61,58 @@ delete its line here and its branch; the next rebuild carries one patch less.
 The hub pins the resulting SHA in its Dockerfile (cosmic-hub #352 is the
 first). Cadence: monthly, or when an upstream release carries a fix Cosmic
 needs; never per upstream release.
+
+## Local candidate awaiting publication
+
+`feat/generic-read-only-guard-0920` adds optional host-owned mutation admission
+for registered operations on the exact deployed engine pin. No upstream PR or
+release exists yet. Direct engine writers and running background jobs are not
+covered; this is not a whole-process read-only switch.
+
+`feat/background-mutation-admission-0921` extends that local candidate to worker
+admission and queue progress diagnostics, defers waiting-TTL/private-queue
+cancellation while paused, and exposes typed capture denials as a stable CLI
+line. No upstream PR or release exists yet. Already admitted handlers and
+active/stalled recovery (including orphaned-parent bookkeeping) may finish.
+TTL and lease ages continue; expired waiting work can be cancelled after
+resumption. Inline dream drains and unguarded direct writers remain outside
+coverage. Policy reads and database claims do not form an atomic barrier.
+
+`feat/authorized-page-read-preflight-0921` adds generic metadata-only page
+resolution and optional host-owned admission before get_page/fetch content reads.
+Final SQL binds the expected page identity; restore/source/privacy semantics
+remain as before. No accounting, transport bootstrap, upstream PR, release or
+activation exists in this slice. Ordinary successful reads add one metadata
+query even without a callback.
+
+## Local native lifecycle candidate
+
+`feat/native-operation-lifecycle-0921` adds optional generic trusted-host lifecycle admission for native HTTP tools. Source and actual compiled executable use the same external-module path. This local candidate has no upstream PR or deployment. Producer outcomes, proprietary accounting and internal-subcall propagation remain separate prerequisites before a paid host is enabled.
+
+## Local native producer-outcome candidate
+
+`feat/native-operation-outcomes-0921` extends the optional generic lifecycle with terminal producer failures and bounded effects after definitive authorization. Only explicit failed-think and restricted-contradiction branches are instrumented here. Search/assembler availability and session cursor effects remain separate. No upstream PR, deployment or paid activation is claimed.
+
+## Local hybrid retrieval-completion foundation
+
+Optional trusted completion evidence follows the selected search/query result through lexical, vector, alias, exact and relational retrieval. Failed required hydration and discarded vector/adaptive/CRAG paths cannot authorize an empty fallback. Standalone behavior and the hard-disabled semantic result cache remain unchanged. This is the first B2b slice only; entity/think/context assemblers, cursor effects and host accounting integration remain prerequisites. The hybrid module ceiling increases 3295 to 3320 solely for the reviewed optional completion plumbing; no unrelated search extraction. Local-only, no upstream/publication or activation claim.
+
+## Local entity and context completion
+
+Optional trusted completion follows accepted entity-card lookup/hydration and pack/delta assembly. Array snapshots and evidence seal together at the existing inner deadline; late work cannot authorize or alter a delivered snapshot. Configured all-unavailable results stop before enrichment and the later delta cursor write. Standalone behavior, source/privacy filtering and query counts are unchanged. First-wake and successful cursor effects, think/volunteer families and host integration remain prerequisites. Local-only; no upstream PR, release or paid activation.
+
+## Local optional composite host candidate
+
+`feat/context-parent-engine-0921` adds a separately versioned optional composite port on the existing lifecycle host, bounded original-envelope capture and a fixed caller-authenticated child dispatcher. Native operations and ordinary authentication remain unchanged. Application proof/replay/parent accounting and public gateway integration remain separate prerequisites. No upstream PR, deployment or paid activation is claimed.
+
+## Local think retrieval completion
+
+Optional trusted evidence follows accepted gather stream results and processed trajectory winners into think/synthesize. Discarded temporal floor results and timed-out trajectories cannot supply completion. Failed think remains withheld under the configured lifecycle; synthesize preserves its existing accepted extractive fallback. Standalone behavior, source/privacy scope, calibration and model policy stay unchanged. Volunteer/reflex/ordinary turn, cursor effects and host/composite integration remain activation prerequisites. Local-only; no upstream PR, release or paid activation.
+
+## Local volunteer and ordinary turn completion
+
+Trusted evidence follows applicable resolver queries, global weak-alias liveness, required body hydration, accepted volunteer selection and actual statistics. A weak-only no-op title query cannot hide a failed alias arm. Ordinary turn retains Promise.all and publishes only with its final processed result; a caller's sealed discarded outcome ignores late publication. Standalone/source/privacy/telemetry behavior is unchanged. Stateful cursor effects and host/composite integration remain activation prerequisites. Local-only, no upstream PR, release or paid activation.
+
+## Local delta cursor delivery effects
+
+Configured delta distinguishes unavailable cursor storage from a confirmed first wake, then applies one namespaced timestamp-and-slug compare-and-swap after definitive authorization. Expected timestamps use text binding to retain PostgreSQL microseconds; null and empty first slots remain distinct. The optional effect does not delay handoff and cannot retract delivery. Standalone cursor behavior remains unchanged. Local-only; no upstream PR, release or activation.

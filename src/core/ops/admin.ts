@@ -30,6 +30,7 @@ function diagnosticScope(ctx: OperationContext): { sourceId?: string; sourceIds?
 
 const get_stats: Operation = {
   name: 'get_stats',
+  mutating: false, // Inspection only; remains available under mutation policy.
   description: 'Brain statistics (page count, chunk count, etc.) — remote callers see counters confined to their source grant.',
   params: {},
   handler: async (ctx) => {
@@ -41,6 +42,7 @@ const get_stats: Operation = {
 
 const get_health: Operation = {
   name: 'get_health',
+  mutating: false, // Inspection only; remains available under mutation policy.
   description: 'Brain health dashboard (embed coverage, stale pages, orphans) — remote callers see counters confined to their source grant. Includes a `migrations {pending, partial, wedged, skipped_future}` block from the host migration ledger so remote agents can detect wedged/outstanding host migrations without shelling into the brain host.',
   params: {},
   handler: async (ctx) => {
@@ -139,6 +141,7 @@ const get_brain_identity: Operation = {
  */
 const run_doctor: Operation = {
   name: 'run_doctor',
+  mutating: false, // Inspection only; remains available under mutation policy.
   description: 'Run brain health checks and return a structured DoctorReport (thin-client doctor surface).',
   params: {},
   handler: async (ctx) => {
@@ -205,6 +208,7 @@ const revert_version: Operation = {
  */
 const quarantine_list: Operation = {
   name: 'quarantine_list',
+  mutating: false, // Inspection only; remains available under mutation policy.
   description:
     'List quarantined (hidden) and optionally content-flagged pages by scanning page ' +
     'frontmatter, newest-updated first. When truncated is true, count is a LOWER BOUND — ' +

@@ -1,3 +1,4 @@
+import { RetrievalCompletion } from '../retrieval-completion.ts';
 /**
  * Takes + think operation cluster — pure move from operations.ts (v0.46.x
  * tranche 1). Op consts stay module-private; `takesOperations` below lists
@@ -210,7 +211,9 @@ const think: Operation = {
     // and get default scope + remote=false from runThink's CLI path.
     const thinkScope = thinkSourceScopeOpts(ctx);
     const { runThink, persistSynthesis } = await import('../think/index.ts');
+    const completion = ctx.reportFailure ? new RetrievalCompletion() : undefined;
     const result = await runThink(ctx.engine, {
+      completion,
       question: String(p.question),
       // #3734: MCP think must populate the question vector for takes retrieval.
       embedQuestion: (q) => embedQuery(q),
@@ -231,6 +234,15 @@ const think: Operation = {
       excludePrivate: (await readPolicyOpts(ctx)).excludePrivate,
       remote: ctx.remote !== false, // fail-closed: anything not strictly false is untrusted (CLAUDE.md invariant)
     });
+
+    if (completion && !completion.seal().completed) {
+      ctx.reportFailure!({ code: 'unavailable' });
+      return {};
+    }
+
+    if (result.synthesisOk === false || (result.synthesis_status !== undefined && result.synthesis_status !== 'ok')) {
+      ctx.reportFailure?.({ code: 'unavailable' });
+    }
 
     // Persist if --save was passed locally
     let savedSlug: string | undefined;

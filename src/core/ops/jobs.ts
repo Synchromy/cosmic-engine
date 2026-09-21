@@ -507,6 +507,7 @@ const submit_agent: Operation = {
  */
 const get_agent_job: Operation = {
   name: 'get_agent_job',
+  mutating: false, // Inspection only; remains available under mutation policy.
   description: 'Poll an agent job submitted via submit_agent. Returns a trimmed status view (id, status, timestamps, error_text, result) plus queue_position (waiting jobs ahead in claim order; 0 = next) while the job is still waiting. Requires the `agent` OAuth scope; only jobs owned by the calling client are visible.',
   params: {
     id: { type: 'number', required: true, description: 'Job id returned by submit_agent' },
@@ -589,6 +590,7 @@ const get_agent_job: Operation = {
 
 const get_job: Operation = {
   name: 'get_job',
+  mutating: false, // Inspection only; remains available under mutation policy.
   description: 'Get job status and details by ID. Agent-scoped tokens (no admin) see only jobs they own.',
   params: {
     id: { type: 'number', required: true, description: 'Job ID' },
@@ -610,6 +612,7 @@ const get_job: Operation = {
 
 const list_jobs: Operation = {
   name: 'list_jobs',
+  mutating: false, // Inspection only; remains available under mutation policy.
   description: 'List jobs with optional filters. Agent-scoped tokens (no admin) see only jobs they own.',
   params: {
     status: { type: 'string', description: 'Filter by status (waiting, active, completed, failed, delayed, dead, cancelled)' },
@@ -684,6 +687,7 @@ const retry_job: Operation = {
 
 const get_job_progress: Operation = {
   name: 'get_job_progress',
+  mutating: false, // Inspection only; remains available under mutation policy.
   description: 'Get structured progress for a running job. Agent-scoped tokens (no admin) see only jobs they own.',
   params: {
     id: { type: 'number', required: true, description: 'Job ID' },
@@ -819,6 +823,7 @@ const send_job_message: Operation = {
  */
 const get_job_stats: Operation = {
   name: 'get_job_stats',
+  mutating: false, // Inspection only; remains available under mutation policy.
   description:
     'Job queue statistics. PER-BLOCK scoping: by_status and queue_health are GLOBAL ' +
     '(unfiltered); by_type is windowed by since_hours; only the wedge block is scoped to ' +

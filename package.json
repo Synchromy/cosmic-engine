@@ -11,6 +11,7 @@
     "./engine": "./src/core/engine.ts",
     "./types": "./src/core/types.ts",
     "./operations": "./src/core/operations.ts",
+    "./operation-lifecycle": "./src/core/operation-lifecycle.ts",
     "./minions": "./src/core/minions/index.ts",
     "./engine-factory": "./src/core/engine-factory.ts",
     "./pglite-engine": "./src/core/pglite-engine.ts",

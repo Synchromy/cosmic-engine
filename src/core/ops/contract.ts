@@ -1,3 +1,4 @@
+import type { PageReadTarget } from '../page-read-identity.ts';
 /**
  * Foundation contract for the operations layer (pure move from
  * src/core/operations.ts): the error envelope (ErrorCode / OperationError /
@@ -248,7 +249,16 @@ export interface AuthInfo {
   surfaceSetBy?: string;
 }
 
+export type OperationFailure = Readonly<{ code: 'unavailable' | 'refused' }>;
+export type OperationDeliveryEffect = (signal: AbortSignal) => Promise<void>;
+
 export interface OperationContext {
+  /** Trusted lifecycle only. Never populated from caller params or metadata. */
+  reportFailure?(failure: OperationFailure): void;
+  deferAfterDelivery?(effect: OperationDeliveryEffect): void;
+  /** Host-owned admission, never copied from caller params. Refusal throws.
+   * Runs after authorized resolution and before any body or retrieval stamp. */
+  beforePageRead?: (target: PageReadTarget) => Promise<void>;
   engine: BrainEngine;
   config: GBrainConfig;
   logger: Logger;

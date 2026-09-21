@@ -1,3 +1,4 @@
+import { RetrievalCompletion } from '../retrieval-completion.ts';
 /**
  * MEMORY_VERBS v1 — `entity(name)` card builder (zero LLM, p99 < 100ms).
  *
@@ -112,10 +113,15 @@ export async function buildEntityCard(
   engine: BrainEngine,
   sourceId: string,
   name: string,
-  opts: { remote: boolean },
+  opts: { remote: boolean; completion?: RetrievalCompletion },
 ): Promise<EntityCardResult> {
   const trimmed = (name ?? '').trim();
   if (!trimmed) return { found: false, suggestions: [] };
+  const completion = opts.completion ? new RetrievalCompletion() : undefined;
+  const finish = (result: EntityCardResult): EntityCardResult => {
+    if (completion) opts.completion!.accept(completion.seal());
+    return result;
+  };
 
   // #4352 — untrusted callers never resolve a `visibility: private` page into
   // a card (or a near-miss suggestion). Trust + config gate resolve through
@@ -147,7 +153,9 @@ export async function buildEntityCard(
   if (norm) {
     try {
       const aliasMap = await engine.resolveAliases([norm], { sourceId });
-      for (const hit of aliasMap.get(norm) ?? []) consider(hit.slug, ARM_ALIAS);
+      const hits = aliasMap.get(norm) ?? [];
+      if (!hits.length) completion?.complete();
+      for (const hit of hits) consider(hit.slug, ARM_ALIAS);
     } catch {
       /* no page_aliases table — degrade to arm 2 [E3] */
     }
@@ -167,6 +175,7 @@ export async function buildEntityCard(
              OR slug LIKE $4 )${privatePredicate}`,
       [sourceId, titleLc, exactSlugs, `%/${slug || trimmed}`],
     );
+    completion?.complete();
   } catch {
     rows = [];
   }
@@ -188,6 +197,7 @@ export async function buildEntityCard(
         [sourceId, missing],
       );
       for (const r of extra) rowBySlug.set(r.slug, r);
+      completion?.complete();
     } catch {
       /* stale alias rows — drop */
     }
@@ -208,7 +218,7 @@ export async function buildEntityCard(
       || lastTouchedMs(b.row) - lastTouchedMs(a.row));
 
   if (candidates.length === 0) {
-    return { found: false, suggestions: await nearMissSuggestions(engine, sourceId, trimmed, excludePrivate) };
+    return finish({ found: false, suggestions: await nearMissSuggestions(engine, sourceId, trimmed, excludePrivate, completion) });
   }
 
   const best = candidates[0];
@@ -220,11 +230,11 @@ export async function buildEntityCard(
   }));
 
   const card = await assembleCard(engine, sourceId, best.row, opts.remote);
-  return {
+  return finish({
     found: true,
     card,
     ...(runnersUp.length ? { suggestions: runnersUp } : {}),
-  };
+  });
 }
 
 function exactMatchPreference(row: CardPageRow, exactSlugs: string[]): number {
@@ -417,6 +427,7 @@ async function nearMissSuggestions(
   sourceId: string,
   name: string,
   excludePrivate = false,
+  completion?: RetrievalCompletion,
 ): Promise<EntitySuggestion[]> {
   try {
     const raw = await engine.searchKeyword(name, { limit: SUGGESTION_CAP, sourceId, excludePrivate });
@@ -424,11 +435,13 @@ async function nearMissSuggestions(
     // #3783 — direct FTS path: every row is a keyword hit by construction.
     markKeywordHits(results);
     stampEvidence(results);
-    return results.map(r => ({
+    const suggestions = results.map(r => ({
       slug: r.slug,
       title: r.title ?? r.slug,
       create_safety: r.create_safety ?? 'unknown',
     }));
+    completion?.complete();
+    return suggestions;
   } catch {
     return [];
   }

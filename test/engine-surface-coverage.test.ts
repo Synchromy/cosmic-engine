@@ -50,7 +50,7 @@ const INTERFACE_METHODS: readonly string[] = [
   // Lifecycle
   'connect', 'disconnect', 'reconnect', 'initSchema', 'transaction', 'withReservedConnection',
   // Pages CRUD
-  'getPage', 'putPage', 'findDuplicatePage', 'deletePage', 'deletePages', 'resolveSlugsByPaths',
+  'getPage', 'getPageIdentity', 'putPage', 'findDuplicatePage', 'deletePage', 'deletePages', 'resolveSlugsByPaths',
   'softDeletePage', 'softDeletePages', 'restorePage', 'purgeDeletedPages', 'listPages', 'resolveSlugs', 'getAllSlugs',
   'listAllPageRefs', 'listAllSources', 'updateSourceConfig', 'listPrefixSampledPages', 'listCorpusSample',
   // Search

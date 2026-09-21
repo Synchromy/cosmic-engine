@@ -1,3 +1,4 @@
+import { RetrievalCompletion } from '../retrieval-completion.ts';
 /**
  * Relational recall arm (typed-edge retrieval, v0.43).
  *
@@ -35,6 +36,7 @@ import { parseRelationalQuery, type RelationalQuery, type RelationVocab } from '
 import { stampEvidence, type EvidenceOpts } from './evidence.ts';
 
 export interface RelationalArmOpts extends PageReadPolicy {
+  completion?: RetrievalCompletion;
   sourceId?: string;
   sourceIds?: string[];
   depth?: number;
@@ -96,18 +98,23 @@ async function resolveSeedScoped(
   sources: string[],
   phrase: string,
   policy: PageReadPolicy,
+  completion?: RetrievalCompletion,
 ): Promise<Array<{ source_id: string; slug: string }>> {
   const out: Array<{ source_id: string; slug: string }> = [];
   const seen = new Set<string>();
+  let allResolved = true;
   for (const sid of sources) {
-    const r = await resolveEntitySlugWithSource(engine, sid, phrase);
+    const resolution = completion ? new RetrievalCompletion() : undefined;
+    const r = await resolveEntitySlugWithSource(engine, sid, phrase, resolution);
+    if (resolution && !resolution.seal().completed) allResolved = false;
     if (!r || r.source === 'fallback_slugify') continue;
     const key = `${sid}:${r.slug}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({ source_id: sid, slug: r.slug });
   }
-  if (!out.length || !hasReadPolicy(policy)) return out;
+  if (!out.length) { if (allResolved) completion?.complete(); return out; }
+  if (!hasReadPolicy(policy)) { completion?.complete(); return out; }
   const params: unknown[] = [out.map(ref => ref.source_id), out.map(ref => ref.slug)];
   const filter = pageReadFilter('p', policy, params, true);
   const admitted = await engine.executeRaw<{ source_id: string; slug: string }>(
@@ -116,6 +123,7 @@ async function resolveSeedScoped(
        ON p.source_id = refs.source_id AND p.slug = refs.slug WHERE ${filter}`, params,
   );
   const allowed = new Set(admitted.map(ref => `${ref.source_id}:${ref.slug}`));
+  completion?.complete();
   return out.filter(ref => allowed.has(`${ref.source_id}:${ref.slug}`));
 }
 
@@ -274,7 +282,8 @@ export async function buildRelationalArm(
   const meta: RelationalArmMeta = {
     fired: false, kind: null, seeds_resolved: 0, candidates: 0, errored: false, duration_ms: 0,
   };
-  const finish = (list: SearchResult[]) => {
+  const finish = (list: SearchResult[], completed = false) => {
+    if (completed) opts.completion?.complete();
     meta.candidates = list.length;
     meta.duration_ms = Date.now() - startedAt;
     opts.onMeta?.(meta);
@@ -301,9 +310,11 @@ export async function buildRelationalArm(
 
     if (parsed.kind === 'connects' && parsed.seeds.length === 2) {
       // Resolve both endpoints; both must resolve or the arm no-ops.
-      const resA = await resolveSeedScoped(engine, sources, parsed.seeds[0], opts);
-      const resB = await resolveSeedScoped(engine, sources, parsed.seeds[1], opts);
-      if (resA.length === 0 || resB.length === 0) return finish([]);
+      const aCompletion = opts.completion ? new RetrievalCompletion() : undefined;
+      const bCompletion = opts.completion ? new RetrievalCompletion() : undefined;
+      const resA = await resolveSeedScoped(engine, sources, parsed.seeds[0], opts, aCompletion);
+      const resB = await resolveSeedScoped(engine, sources, parsed.seeds[1], opts, bCompletion);
+      if (resA.length === 0 || resB.length === 0) return finish([], !!aCompletion?.seal().completed && !!bCompletion?.seal().completed);
       meta.seeds_resolved = resA.length + resB.length;
 
       const a = { slugs: [...new Set(resA.map(ref => ref.slug))], seedRefs: resA };
@@ -321,12 +332,13 @@ export async function buildRelationalArm(
         .map(x => x.row);
       const list = await hydrate(engine, shared, parsed.seeds.join(' ↔ '), opts);
       meta.fired = list.length > 0;
-      return finish(list);
+      return finish(list, true);
     }
 
     // who_rel / who_at / intro: single logical seed (may resolve in N sources).
-    const resolved = await resolveSeedScoped(engine, sources, parsed.seeds[0], opts);
-    if (resolved.length === 0) return finish([]);
+    const resolution = opts.completion ? new RetrievalCompletion() : undefined;
+    const resolved = await resolveSeedScoped(engine, sources, parsed.seeds[0], opts, resolution);
+    if (resolved.length === 0) return finish([], !!resolution?.seal().completed);
     meta.seeds_resolved = resolved.length;
     const slugs = Array.from(new Set(resolved.map(r => r.slug)));
     const rows = await engine.relationalFanout(slugs, {
@@ -335,7 +347,7 @@ export async function buildRelationalArm(
     });
     const list = await hydrate(engine, rows, resolved[0].slug, opts);
     meta.fired = list.length > 0;
-    return finish(list);
+    return finish(list, true);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     failureWriter.log({ error_summary: truncate(msg), query_kind: parsed.kind });

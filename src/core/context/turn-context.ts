@@ -1,3 +1,4 @@
+import { RetrievalCompletion } from '../retrieval-completion.ts';
 /**
  * Turn-context assembly (agent-bootstrap plan: S3#1, ENG-1, ENG-11, CX-P1.2).
  *
@@ -135,6 +136,8 @@ export interface TurnContextResult {
 }
 
 export interface AssembleTurnContextOpts {
+  /** Trusted accepted outcome for the selected assembly mode. */
+  completion?: RetrievalCompletion;
   sourceId: string;
   /** Recent turns, oldest → newest. Optional for pack/delta (may run cold). */
   window?: WindowTurn[];
@@ -200,6 +203,7 @@ export async function assembleTurnContext(
   if (mode === 'pack') return assemblePack(engine, opts);
   if (mode === 'delta') return assembleDelta(engine, opts);
 
+  const completion = opts.completion ? new RetrievalCompletion() : undefined;
   const maxBytes =
     typeof opts.maxBytes === 'number' && Number.isFinite(opts.maxBytes) && opts.maxBytes > 0
       ? Math.floor(opts.maxBytes)
@@ -223,14 +227,17 @@ export async function assembleTurnContext(
     try {
       const candidates = extractCandidatesFromWindow(window);
       if (candidates.length) {
+        const child = completion ? new RetrievalCompletion() : undefined;
         const block = await resolveEntitiesToPointers(engine, opts.sourceId, candidates, {
+          completion: child,
           priorContextText: opts.priorContextText,
           suppression: 'slug-only',
           maxPointers: DEFAULT_MAX_POINTERS,
           lexicalArms: opts.lexicalArms,
         });
         pointers = block?.pointers ?? [];
-      }
+        if (child) completion!.accept(child.seal());
+      } else if (window.length) completion?.complete();
     } catch {
       pointers = [];
     }
@@ -241,7 +248,9 @@ export async function assembleTurnContext(
     try {
       if (window.length) {
         const excludeSlugs = new Set(pointers.map((p) => p.slug));
+        const child = completion ? new RetrievalCompletion() : undefined;
         volunteered = await volunteerContext(engine, window, {
+          completion: child,
           sourceIds: [opts.sourceId],
           priorContext: opts.priorContextText,
           excludeSlugs,
@@ -250,6 +259,7 @@ export async function assembleTurnContext(
           // pointer arm above (ResolvePointersOpts.lexicalArms).
           lexicalArms: opts.lexicalArms,
         });
+        if (child) completion!.accept(child.seal());
       }
     } catch {
       volunteered = [];
@@ -261,6 +271,7 @@ export async function assembleTurnContext(
   //    remote: true is the load-bearing bit [S3#1]: it pins the meta-hook's
   //    visibility tier to ['world'] so a private fact can NEVER cross the IPC
   //    boundary, exactly matching what a remote MCP caller would see.
+  const factsCompletion = completion ? new RetrievalCompletion() : undefined;
   const factsArm = (async (): Promise<TurnContextFact[]> => {
     try {
       const metaCtx: OperationContext = {
@@ -275,13 +286,16 @@ export async function assembleTurnContext(
       };
       const meta = await getBrainHotMemoryMeta('turn_context', metaCtx);
       const hot = meta?.brain_hot_memory as { facts?: TurnContextFact[] } | undefined;
-      return Array.isArray(hot?.facts) ? [...hot.facts] : [];
+      const facts = Array.isArray(hot?.facts) ? [...hot.facts] : [];
+      factsCompletion?.complete();
+      return facts;
     } catch {
       return [];
     }
   })();
 
   const [{ pointers, volunteered }, facts] = await Promise.all([pointersVolunteerArm, factsArm]);
+  if (factsCompletion) completion!.accept(factsCompletion.seal());
 
   // 4. Render + budget [ENG-1]: trim facts first, then volunteered pages,
   //    then pointers — always lowest-confidence first.
@@ -305,7 +319,7 @@ export async function assembleTurnContext(
     if (byteLen(text) > maxBytes) text = '';
   }
 
-  return {
+  const result: TurnContextResult = {
     text,
     pointers,
     // Post-trim survivors: budget trimming mutates these arrays in place, so
@@ -315,6 +329,8 @@ export async function assembleTurnContext(
     factsCount: facts.length,
     ...(degradedReason ? { degradedReason } : {}),
   };
+  if (completion) opts.completion!.accept(completion.seal());
+  return result;
 }
 
 function byteLen(s: string): number {
@@ -414,6 +430,7 @@ async function fetchHotFacts(
   engine: BrainEngine,
   opts: AssembleTurnContextOpts,
   remote: boolean,
+  completion?: RetrievalCompletion,
 ): Promise<TurnContextFact[]> {
   try {
     const metaCtx: OperationContext = {
@@ -428,7 +445,9 @@ async function fetchHotFacts(
     };
     const meta = await getBrainHotMemoryMeta('turn_context', metaCtx);
     const hot = meta?.brain_hot_memory as { facts?: TurnContextFact[] } | undefined;
-    return Array.isArray(hot?.facts) ? [...hot.facts] : [];
+    const facts = Array.isArray(hot?.facts) ? [...hot.facts] : [];
+    completion?.complete();
+    return facts;
   } catch {
     return [];
   }
@@ -444,6 +463,7 @@ async function assemblePack(
   engine: BrainEngine,
   opts: AssembleTurnContextOpts,
 ): Promise<TurnContextResult> {
+  const completion = opts.completion ? new RetrievalCompletion() : undefined;
   const remote = opts.includePrivate !== true; // fail-closed: only explicit true widens
   const maxEntities = clampPositive(opts.maxEntities, PACK_DEFAULT_MAX_ENTITIES);
   const entities = (opts.entities ?? [])
@@ -461,14 +481,18 @@ async function assemblePack(
     for (const name of entities) {
       if (deadlineAt !== null && Date.now() >= deadlineAt) return;
       try {
-        const res = await buildEntityCard(engine, opts.sourceId, name, { remote });
+        const child = completion ? new RetrievalCompletion() : undefined;
+        const res = await buildEntityCard(engine, opts.sourceId, name, { remote, completion: child });
         if (res.found && res.card) acc.cards.push(res.card);
+        if (child) completion!.accept(child.seal());
       } catch {
         /* fail-soft: skip this entity */
       }
     }
     if (deadlineAt !== null && Date.now() >= deadlineAt) return;
-    acc.facts = await fetchHotFacts(engine, opts, remote);
+    const factsCompletion = completion ? new RetrievalCompletion() : undefined;
+    acc.facts = await fetchHotFacts(engine, opts, remote, factsCompletion);
+    if (factsCompletion) completion!.accept(factsCompletion.seal());
   })();
 
   const degradedReason = await raceDeadline(build, opts.deadlineMs);
@@ -478,6 +502,7 @@ async function assemblePack(
   // downstream. Copies freeze the delivered view.
   const cards = [...acc.cards];
   const facts = [...acc.facts];
+  if (completion) opts.completion!.accept(completion.seal());
   // `since` filter (adversarial review: was documented but dead) — open-thread
   // events are cut to those after the cursor, matching the verb contract.
   const since = typeof opts.since === 'string' && opts.since.trim() ? opts.since : undefined;
@@ -509,6 +534,7 @@ async function assembleDelta(
   engine: BrainEngine,
   opts: AssembleTurnContextOpts,
 ): Promise<TurnContextResult> {
+  const completion = opts.completion ? new RetrievalCompletion() : undefined;
   const remote = opts.includePrivate !== true;
   const since = typeof opts.since === 'string' && opts.since.trim() ? opts.since : undefined;
   const acc: {
@@ -551,6 +577,7 @@ async function assembleDelta(
           updated_at:
             p.updated_at_iso ?? (p.updated_at instanceof Date ? p.updated_at.toISOString() : String(p.updated_at)),
         }));
+        completion?.complete();
       } catch {
         acc.pages = [];
       }
@@ -583,6 +610,7 @@ async function assembleDelta(
             context: r.context ?? null,
             confidence: r.confidence,
           }));
+        completion?.complete();
       } catch {
         acc.facts = [];
       }
@@ -594,12 +622,14 @@ async function assembleDelta(
     for (const name of entities) {
       if (deadlineAt !== null && Date.now() >= deadlineAt) return;
       try {
-        const res = await buildEntityCard(engine, opts.sourceId, name, { remote });
+        const child = completion ? new RetrievalCompletion() : undefined;
+        const res = await buildEntityCard(engine, opts.sourceId, name, { remote, completion: child });
         if (res.found && res.card) {
           for (const t of res.card.open_threads ?? []) {
             if (!since || (t.date && isAfter(t.date, since))) acc.threads.push(t);
           }
         }
+        if (child) completion!.accept(child.seal());
       } catch {
         /* fail-soft */
       }
@@ -611,13 +641,15 @@ async function assembleDelta(
   const pages = [...acc.pages];
   const facts = [...acc.facts];
   const threads = [...acc.threads];
+  const overflow = acc.overflow;
+  if (completion) opts.completion!.accept(completion.seal());
   const text = renderDelta(pages, facts, threads, since);
   return {
     text,
     pointers: [],
     factsCount: facts.length,
     deltaPages: pages,
-    deltaOverflow: acc.overflow,
+    deltaOverflow: overflow,
     openThreads: threads,
     facts,
     mode: 'delta',
