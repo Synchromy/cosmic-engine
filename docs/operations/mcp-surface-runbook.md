@@ -15,11 +15,13 @@ server restart unless it says so.
 
 Gated ops (`Operation.publishGateKey`): `list_skills` / `get_skill` /
 `list_brain_skillpack` (`mcp.publish_skills`) and `advisor`
-(`mcp.publish_advisor`), plus the typed interaction writer
-`append_page_event` (`writer.append_page_event`). All gates default OFF:
-the ops are hidden from remote tools/list AND denied at call time. The two
-`mcp.*` gates have the documented DB-over-file fallback; the writer gate is
-DB-only so copying a host config file cannot activate a mutation surface.
+(`mcp.publish_advisor`). Both gates default OFF: the ops are hidden from
+remote tools/list AND denied at call time, with the documented DB-over-file
+fallback. The typed interaction writer `append_page_event` is not gated: it
+is an ordinary write-scope operation, guarded by the page revision and the
+receipt journal like `patch_page`. (It carried a `writer.append_page_event`
+activation switch until its conformance gate passed; a per-deployment switch
+on a call agents use constantly is a provisioning step that gets missed.)
 
 ```bash
 gbrain config set mcp.publish_skills true      # or mcp.publish_advisor
