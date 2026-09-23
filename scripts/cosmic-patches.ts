@@ -27,7 +27,7 @@
  *   pin-check  is the SHA cosmic-hub installs the head of this lane?
  */
 import { $ } from 'bun';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, chmodSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -104,7 +104,9 @@ async function unmerged(dir: string): Promise<string[]> {
  *  and its real size; write that size back and say which rebuild moved it. */
 async function rederiveLedger(dir: string, reg: Register, tag: string) {
   if (!existsSync(join(dir, 'scripts/check-module-size.sh'))) return;
-  const out = await $`bash scripts/check-module-size.sh`.cwd(dir).nothrow().quiet().text();
+  // The check reports on stderr, which is why the bash version ran it 2>&1.
+  const run = await $`bash scripts/check-module-size.sh`.cwd(dir).nothrow().quiet();
+  const out = `${run.stdout}${run.stderr}`;
   const sizes = new Map<string, string>();
   for (const line of out.split('\n')) {
     const m = line.match(/^FAIL: (\S+) (?:is|shrank to) (\d+) lines/);
@@ -177,6 +179,8 @@ async function build(tag: string, reg: Register, o: BuildOpts): Promise<{ dir: s
     }
     mkdirSync(dirname(join(dir, c.path)), { recursive: true });
     writeFileSync(join(dir, c.path), src.stdout);
+    const mode = (await $`git -C ${root} ls-tree ${o.carryFrom} -- ${c.path}`.quiet().text()).split(/\s/)[0];
+    if (mode === '100755') chmodSync(join(dir, c.path), 0o755);
     carried.push(c.path);
   }
   await $`git -C ${dir} add -- ${carried}`.quiet();
@@ -274,14 +278,21 @@ async function main(argv: string[]) {
     const dir = join(tmpdir(), `cosmic-reproduce-${process.pid}`);
     const r = await build(reg.base_tag, reg, { keepGoing: false, test: false, regen: true, dir, branch: null, force: true, carryFrom: 'HEAD' });
     if (!r.ok) { for (const x of r.outcomes) console.log(`${x.id.padEnd(36)} ${cell(x)}`); await $`git -C ${root} worktree remove --force ${dir}`.nothrow().quiet(); return 1; }
-    const diff = await $`git -C ${root} diff --stat HEAD ${r.sha}`.quiet().text();
+    // The ledger is derived, like a generated file: its rows depend on merge
+    // order and the ratchet's slack, so two correct builds can differ in it.
+    // It is held to the check it exists for, on both sides, instead of bytes.
+    const diff = await $`git -C ${root} diff --stat HEAD ${r.sha} -- . ${`:!${reg.ledger}`}`.quiet().text();
+    const sizeCheck = async (cwd: string) => (await $`bash scripts/check-module-size.sh`.cwd(cwd).nothrow().quiet()).exitCode === 0;
+    const builtOk = await sizeCheck(dir), laneOk = await sizeCheck(root);
     await $`git -C ${root} worktree remove --force ${dir}`.nothrow().quiet();
+    let code = 0;
     if (diff.trim()) {
       console.log(`Rebuilding ${reg.base_tag} from the register does NOT give this lane. What the register misses:\n${diff}`);
-      return 1;
-    }
-    console.log(`Rebuilding ${reg.base_tag} from the register reproduces HEAD exactly.`);
-    return 0;
+      code = 1;
+    } else console.log(`Rebuilding ${reg.base_tag} from the register reproduces HEAD (every file but the size ledger, byte for byte).`);
+    console.log(`module size check: rebuilt ${builtOk ? 'passes' : 'FAILS'}, this lane ${laneOk ? 'passes' : 'FAILS'}`);
+    if (!builtOk || !laneOk) code = 1;
+    return code;
   }
 
   if (cmd === 'status') {
