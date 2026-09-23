@@ -168,3 +168,54 @@ describe('computeEffectiveDate range validation [1990, NOW + 1y]', () => {
     expect(r.source).toBe('fallback');
   });
 });
+
+describe('computeEffectiveDate reads a date in the path and in created:', () => {
+  // A brain moved between engines lands every page with a fresh row time.
+  // 759 of 1,504 pages on one such brain fell back to the day of the move
+  // while 651 carried a date in a directory name and 128 in `created:`.
+
+  test('a directory date is read when the basename has none', () => {
+    const r = run({ slug: 'atoms/2026-06-25/oauth-tokens', filename: 'oauth-tokens' });
+    expect(r.source).toBe('path');
+    expect(r.date?.toISOString().startsWith('2026-06-25')).toBe(true);
+  });
+
+  test('the first dated directory wins; deeper ones are ignored', () => {
+    const r = run({ slug: 'daily/2026-07-03/2026-07-04-notes/x', filename: 'x' });
+    expect(r.source).toBe('path');
+    expect(r.date?.toISOString().startsWith('2026-07-03')).toBe(true);
+  });
+
+  test('a date inside the basename, not at its start, is not a path date', () => {
+    const r = run({ slug: 'inbox/gmail/thread-2026-08-01', filename: 'thread-2026-08-01' });
+    expect(r.source).toBe('fallback');
+  });
+
+  test('created: is read when nothing else carries a date', () => {
+    const r = run({ slug: 'people/ahmed-tazi', fm: { created: '2026-07-14T09:12:00Z' } });
+    expect(r.source).toBe('created');
+    expect(r.date?.toISOString().startsWith('2026-07-14')).toBe(true);
+  });
+
+  test('every earlier candidate outranks path, and path outranks created', () => {
+    const fm = { created: '2026-09-02' };
+    expect(run({ slug: 'atoms/2026-06-25/x', fm: { ...fm, date: '2026-04-01' } }).source).toBe('date');
+    expect(run({ slug: 'atoms/2026-06-25/x', fm, filename: '2026-05-05-x' }).source).toBe('filename');
+    expect(run({ slug: 'atoms/2026-06-25/x', fm }).source).toBe('path');
+    expect(run({ slug: 'people/x', fm }).source).toBe('created');
+  });
+
+  test('a filename-first prefix keeps the filename ahead, then the path', () => {
+    const r = run({ slug: 'meetings/2026-04/2026-04-21-neil', filename: '2026-04-21-neil', fm: { date: '2026-01-01' } });
+    expect(r.source).toBe('filename');
+    const p = run({ slug: 'meetings/2026-04-21/neil', filename: 'neil', fm: { date: '2026-01-01' } });
+    expect(p.source).toBe('path');
+  });
+
+  test('an out-of-range or unparseable path or created: date falls through', () => {
+    expect(run({ slug: 'atoms/1850-01-01/x', filename: 'x' }).source).toBe('fallback');
+    expect(run({ slug: 'atoms/2026-13-40/x', filename: 'x' }).source).toBe('fallback');
+    expect(run({ slug: 'people/x', fm: { created: 'yesterday' } }).source).toBe('fallback');
+    expect(run({ slug: 'people/x', fm: { created: '2030-01-01' } }).source).toBe('fallback');
+  });
+});
