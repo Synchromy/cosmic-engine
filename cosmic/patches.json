@@ -1,0 +1,125 @@
+{
+  "$comment": "The Synchromy patch register. The ONLY list of what cosmic/<lane> carries on top of upstream. scripts/cosmic-patches.ts reads it to rebuild, verify and check upstream; test/cosmic-patches.test.ts proves every patch is present. See PATCHES.md for the why.",
+  "upstream_repo": "garrytan/gbrain",
+  "lane": "cosmic/v0.48.5",
+  "base_tag": "v0.48.5.0",
+  "hub": { "repo": "Synchromy/cosmic-hub", "ref": "main", "dockerfile": "Dockerfile" },
+
+  "patches": [
+    {
+      "id": "c1-contained-mutations",
+      "branch": "upstream/c1-contained-mutations",
+      "what": "revision-guarded canonical page mutations and receipts; the patch_page op",
+      "state": "permanent",
+      "upstream": { "pr": 4834, "seen": "closed", "checked": "2026-09-23", "note": "declined 2026-09-15: new product surface is a maintainer call" },
+      "since": "2026-09-03",
+      "depends_on": [],
+      "hub_uses": "patch_page: serve/agents.ts, serve/gateway.ts, surface/dash-api.ts, interpret/skills.ts, client/kit/session-digest.ts",
+      "tests": ["test/c1-containment-admission.test.ts", "test/canonical-page-mutations.test.ts", "test/patch-page-c1.test.ts"]
+    },
+    {
+      "id": "idempotent-append-page-event",
+      "branch": "upstream/idempotent-append-page-event",
+      "what": "append_page_event, an idempotent typed interaction append",
+      "state": "permanent",
+      "upstream": { "pr": 4837, "seen": "closed", "checked": "2026-09-23", "note": "declined 2026-09-15: new surface" },
+      "since": "2026-09-03",
+      "depends_on": ["c1-contained-mutations"],
+      "hub_uses": "append_page_event: serve/agents.ts, client/kit/session-digest.ts",
+      "tests": ["test/append-page-event-c1.serial.test.ts", "test/canonical-page-events.test.ts"]
+    },
+    {
+      "id": "patch-page-type-title",
+      "branch": "upstream/patch-page-type-title",
+      "what": "patch_page accepts dedicated type and title fields",
+      "state": "permanent",
+      "upstream": { "pr": 4838, "seen": "closed", "checked": "2026-09-23", "note": "declined 2026-09-15: stacked on #4834" },
+      "since": "2026-09-03",
+      "depends_on": ["c1-contained-mutations"],
+      "hub_uses": "patch_page type/title: same callers as c1-contained-mutations",
+      "tests": ["test/patch-page-c1.test.ts"]
+    },
+    {
+      "id": "effective-date-path-and-created",
+      "branch": "upstream/effective-date-path-and-created",
+      "what": "effective_date reads a slug path date and frontmatter.created",
+      "state": "permanent",
+      "upstream": { "pr": 4957, "seen": "closed", "checked": "2026-09-23", "note": "declined 2026-09-15: root cause fixed upstream in v0.46.29.0 (#4527); the precedence change was not taken" },
+      "since": "2026-09-07",
+      "depends_on": [],
+      "hub_uses": "not established; the coming-week read depends on effective_date being right",
+      "tests": ["test/effective-date.test.ts"]
+    },
+    {
+      "id": "c1-database-canonical",
+      "branch": "upstream/c1-database-canonical",
+      "what": "C1 mutations commit against the database row when no repo is configured, which is how the hub runs",
+      "state": "permanent",
+      "upstream": { "pr": 4958, "seen": "closed", "checked": "2026-09-23", "note": "declined 2026-09-15: same reason as #4834" },
+      "since": "2026-09-07",
+      "depends_on": ["c1-contained-mutations", "idempotent-append-page-event", "patch-page-type-title"],
+      "hub_uses": "every patch_page / append_page_event on a hub tenant (cosmic-hub #391)",
+      "tests": ["test/c1-database-canonical.test.ts"]
+    },
+    {
+      "id": "sources-set-id",
+      "branch": "upstream/sources-set-id",
+      "what": "sources set-id: a source's identity, changed safely",
+      "state": "permanent",
+      "upstream": { "pr": null, "seen": "none", "checked": "2026-09-23", "note": "never offered upstream" },
+      "since": "2026-09-08",
+      "depends_on": [],
+      "hub_uses": "serve/devices.ts, serve/vault-files.ts",
+      "tests": ["test/sources-set-id.test.ts"]
+    },
+    {
+      "id": "list-pages-effective-date",
+      "branch": "upstream/list-pages-effective-date",
+      "what": "list_pages exposes effective_after / effective_before",
+      "state": "upstream-open",
+      "upstream": { "pr": 5144, "seen": "open", "checked": "2026-09-23", "note": "no review yet" },
+      "since": "2026-09-16",
+      "depends_on": [],
+      "hub_uses": "the dashboard's coming week: surface/dash-api.ts",
+      "tests": ["test/list-pages-effective-date.test.ts"]
+    },
+    {
+      "id": "ops-expose-what-the-engine-can-do",
+      "branch": "upstream/ops-expose-what-the-engine-can-do",
+      "what": "a filter the engine honours that no op exposes is a bug (contract test)",
+      "state": "permanent",
+      "upstream": { "pr": null, "seen": "none", "checked": "2026-09-23", "note": "never offered upstream" },
+      "since": "2026-09-16",
+      "depends_on": ["list-pages-effective-date"],
+      "hub_uses": "test only",
+      "tests": ["test/ops-expose-what-the-engine-can-do.test.ts"]
+    }
+  ],
+
+  "carry": [
+    { "path": "PATCHES.md", "why": "the patch set's own documentation" },
+    { "path": "cosmic/patches.json", "why": "this register" },
+    { "path": "scripts/cosmic-patches.ts", "why": "rebuild, matrix, reproduce, status, pin-check" },
+    { "path": "scripts/rebuild-cosmic.sh", "why": "the command people already know; calls cosmic-patches.ts" },
+    { "path": "test/cosmic-patches.test.ts", "why": "register sanity and one presence probe per patch" },
+    { "path": "test/chronicle-private-visibility.test.ts", "why": "kept from #4881 when it landed upstream; 9 of 9 against upstream's own gate" },
+    { "path": "test/effective-date-contract.test.ts", "why": "the frontmatter date keys are a contract (cosmic-engine #12)" }
+  ],
+
+  "regenerate": [
+    { "path": "src/core/cli-flag-registry.generated.ts", "command": ["bun", "run", "build:flag-registry"] }
+  ],
+
+  "ledger": "scripts/module-size-limits.tsv",
+
+  "held_back": [
+    { "branch": "upstream/extract-facts-pause-marker", "pr": 4836, "note": "declined 2026-09-15; conflicts in src/core/cycle/extract-facts.ts" },
+    { "branch": "upstream/exact-id-precedence", "pr": 4883, "note": "declined 2026-09-15; conflicts across the v0.48.4.0 ranking wave" }
+  ],
+
+  "landed": [
+    { "branch": "upstream/lock-fact-reconciliation", "pr": 4835, "in": "v0.48.5.0 (#4954)" },
+    { "branch": "upstream/chronicle-visibility", "pr": 4881, "in": "v0.48.5.0 (#4954)" },
+    { "branch": "upstream/facts-since-composition", "pr": 4882, "in": "v0.48.5.0 (#4954)" }
+  ]
+}
