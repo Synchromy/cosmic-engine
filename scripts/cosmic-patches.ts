@@ -66,6 +66,14 @@ export function laneFor(tag: string): string {
   return `cosmic/${tag.replace(/\.0$/, '')}`;
 }
 
+/** The register as carried onto `tag`: same patches, the new lane and base. */
+export function retarget(registerJson: string, tag: string): string {
+  const reg = JSON.parse(registerJson) as Register;
+  reg.lane = laneFor(tag);
+  reg.base_tag = tag;
+  return `${JSON.stringify(reg, null, 2)}\n`;
+}
+
 /** How a conflicted path is settled without a person, or null when it needs one.
  *  The ledger and generated files are rebuilt from scratch after the merges, so
  *  which side wins the textual merge does not matter; the tag's side is kept. */
@@ -178,7 +186,10 @@ async function build(tag: string, reg: Register, o: BuildOpts): Promise<{ dir: s
       if (theirs !== src.text()) throw new Error(`carry: upstream ${tag} now ships ${c.path}; decide whose it is before carrying it`);
     }
     mkdirSync(dirname(join(dir, c.path)), { recursive: true });
-    writeFileSync(join(dir, c.path), src.stdout);
+    // The register travels too, and on the new lane it must describe THAT lane,
+    // or pin-check and reproduce there would still point at the old one.
+    const body = c.path === REGISTER_PATH ? retarget(src.text(), tag) : src.stdout;
+    writeFileSync(join(dir, c.path), body);
     const mode = (await $`git -C ${root} ls-tree ${o.carryFrom} -- ${c.path}`.quiet().text()).split(/\s/)[0];
     if (mode === '100755') chmodSync(join(dir, c.path), 0o755);
     carried.push(c.path);

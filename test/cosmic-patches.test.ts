@@ -12,7 +12,7 @@ import { describe, test, expect } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { operationsByName } from '../src/core/operations.ts';
 import { computeEffectiveDate } from '../src/core/effective-date.ts';
-import { loadRegister, autoResolution, laneFor, type Register } from '../scripts/cosmic-patches.ts';
+import { loadRegister, autoResolution, laneFor, retarget, type Register } from '../scripts/cosmic-patches.ts';
 
 const reg: Register = loadRegister('.');
 
@@ -83,6 +83,14 @@ describe('the patch register', () => {
 
   test('lane naming matches the lanes that exist', () => {
     expect(laneFor(reg.base_tag)).toBe(reg.lane);
+  });
+
+  test('the register carried onto a new tag describes the new lane, and keeps every patch', () => {
+    const moved = JSON.parse(retarget(readFileSync('cosmic/patches.json', 'utf8'), 'v0.49.0.0')) as Register;
+    expect(moved.lane).toBe('cosmic/v0.49.0');
+    expect(moved.base_tag).toBe('v0.49.0.0');
+    expect(moved.patches).toEqual(reg.patches);
+    expect(moved.carry).toEqual(reg.carry);
   });
 });
 
