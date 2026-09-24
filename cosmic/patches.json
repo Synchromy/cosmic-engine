@@ -225,6 +225,10 @@
     {
       "path": "test/cosmic-brand.test.ts",
       "why": "the cosmic-brand leak test"
+    },
+    {
+      "path": ".github/workflows/cosmic-lane.yml",
+      "why": "the lane's own CI gate; upstream's workflows run on master only (finding unattached#25)"
     }
   ],
   "regenerate": [
