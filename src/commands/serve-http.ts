@@ -11,6 +11,7 @@
  */
 
 import express from 'express';
+import { isCredential, brandServerName, brandResourceName } from '../cosmic/brand.ts';
 import type { Socket } from 'net';
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import cookieParser from 'cookie-parser';
@@ -1152,7 +1153,7 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
     // users_admin via /.well-known/oauth-authorization-server. The legacy
     // ['read','write','admin'] list left those new scopes invisible.
     scopesSupported: [...ALLOWED_SCOPES_LIST],
-    resourceName: 'GBrain MCP Server',
+    resourceName: brandResourceName('GBrain MCP Server'),
     // Advertise /mcp as the protected resource (see mcpResourceUrl above).
     resourceServerUrl: mcpResourceUrl,
   };
@@ -2292,7 +2293,7 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
       });
     }
     const server = new Server(
-      { name: 'gbrain', version: VERSION },
+      { name: brandServerName('gbrain'), version: VERSION },
       {
         capabilities: { tools: {}, resources: {} },
         // #4748: contract (+ opt-in writeback section) + deployment identity.
@@ -2300,7 +2301,7 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
       },
     );
     installCapabilitiesResource(server, async () => {
-      return { transport: authInfo.clientId.startsWith('gbrain_cl_') ? 'oauth' : 'legacy', client_id: authInfo.clientId,
+      return { transport: isCredential(authInfo.clientId, 'gbrain_cl_') ? 'oauth' : 'legacy', client_id: authInfo.clientId,
         ...await resolveAuthCapabilities(authInfo, engine, config) };
     });
     server.setRequestHandler(ListToolsRequestSchema, async () => {

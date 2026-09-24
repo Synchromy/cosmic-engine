@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'crypto';
+import { credentialPrefix } from '../cosmic/brand.ts';
 import type { Page, PageInput, PageType, Chunk, SearchResult, StalePageRow } from './types.ts';
 import type { Take, TakeKind, TakeHit } from './engine.ts';
 import type { StaleTakeRow } from './takes-row-types.ts';
@@ -18,7 +19,7 @@ export function hashToken(token: string): string {
  * Generate a cryptographically random token with a prefix.
  */
 export function generateToken(prefix: string): string {
-  return `${prefix}${randomBytes(32).toString('hex')}`;
+  return `${credentialPrefix(prefix)}${randomBytes(32).toString('hex')}`;
 }
 
 /**
