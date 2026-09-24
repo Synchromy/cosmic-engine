@@ -17,6 +17,7 @@
 // array itself — are loaded via dynamic import inside the handler instead
 // (the verbs.ts house pattern).
 import { isUndefinedColumnError } from '../utils.ts';
+import { brandText } from '../../cosmic/brand.ts';
 import { hasScope } from '../scope.ts';
 import { RateLimiter } from '../../mcp/rate-limit.ts';
 import { writeSurfaceChangeAudit } from '../surface-audit.ts';
@@ -269,7 +270,7 @@ const request_tools: Operation = {
       // Area names are non-contractual grouping labels (amendment 22).
       const area = op.area ?? 'other';
       const bucket = groups.get(area) ?? [];
-      bucket.push({ name: op.name, one_line: firstSentenceOf(op.description) });
+      bucket.push({ name: op.name, one_line: firstSentenceOf(brandText(op.description)) });
       groups.set(area, bucket);
     }
     const catalog = [...groups.entries()]

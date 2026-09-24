@@ -33,6 +33,12 @@ Each patch has a `state`:
 patches under it, so when one of those stops, the rebuild says the others were
 skipped because of it, rather than reporting four separate failures.
 
+A patch is a `branch` merged onto the tag, or a `script` run on the result
+after every branch and carried file. A script is for a change that must survive
+upstream rewording: `cosmic-brand` (cosmic-hub #691) edits a dozen exact
+anchors instead of rewording forty files, and fails naming the anchor when
+upstream moves one. Its presence probe is a leak test over the real tool list.
+
 `carry` is new files that are ours alone (this tooling and tests we kept when
 their patch landed upstream). They are copied from the lane you rebuild from,
 so nobody passes commits by hand. If upstream ever ships the same path, the
