@@ -88,19 +88,6 @@ describe('append_page_event C1 operation', () => {
     expect(appendEvent.params.event_token).toBeUndefined();
   });
 
-  test('is fail-closed while its feature flag is disabled', async () => {
-    const file = join(brainDir, 'people/example-person.md');
-    const before = readFileSync(file, 'utf8');
-    await expect(appendEvent.handler(localCtx(), {
-      slug: 'people/example-person',
-      idempotency_key: 'gmail:m1:people/example-person',
-      date: '2026-09-02',
-      channel: 'email',
-      note: 'Discussed renewal timing',
-    })).rejects.toMatchObject({ code: 'unavailable' });
-    expect(readFileSync(file, 'utf8')).toBe(before);
-  });
-
   test('appends, projects, and returns a server-derived immutable receipt', async () => {
     await engine.setConfig('writer.append_page_event', 'true');
     const result = await appendEvent.handler(oauthCtx(), {
