@@ -278,6 +278,31 @@ function scannerSourcePath(scanRoot: string, filePath: string): string {
  * path or the fence lands in a file sync never reads back and the next
  * extract_facts reconcile deletes the fence-owned DB rows.
  */
+/**
+ * v0.50's lock hierarchy, for page writers written before it existed: the
+ * SOURCE FILESYSTEM lock first, then whatever page lock `fn` takes.
+ *
+ * v0.50.0.0 made every write into a source directory hold
+ * withSourceFilesystemLock, and its own writers take it BEFORE the page lock
+ * (timeline-write-through.ts, facts/forget.ts). The C1 writers took only the
+ * page lock, then reached the filesystem lock from inside it: the opposite
+ * order, which deadlocks against any v0.50 writer on the same page, and which
+ * recursed into the page lock a second time on put_page and hung (rebasing
+ * the C1 stack onto v0.50, Synchromy/cosmic-hub#692). A page with no file
+ * target (DB-canonical, the hub topology) has nothing on disk to lock.
+ */
+export async function underSourceFilesystemLock<T>(
+  engine: BrainEngine,
+  slug: string,
+  sourceId: string,
+  fn: () => Promise<T>,
+  target?: PageWriteTarget,
+): Promise<T> {
+  const resolved = target ?? await resolvePageWriteTarget(engine, slug, sourceId);
+  if (!resolved.ok || hasSourceFilesystemLock(resolved.writeRoot)) return fn();
+  return withSourceFilesystemLock(engine, resolved.writeRoot, fn);
+}
+
 export async function resolvePageWriteTarget(
   engine: BrainEngine,
   slug: string,
@@ -379,7 +404,7 @@ async function writePageThroughUnlocked(
     }
     const { filePath, writeRoot, sourcePathToBind } = target;
     if (!hasSourceFilesystemLock(writeRoot)) {
-      return await withSourceFilesystemLock(engine, writeRoot, () => writePageThrough(engine, slug, opts));
+      return await withSourceFilesystemLock(engine, writeRoot, () => writePageThroughUnlocked(engine, slug, opts));
     }
 
     const writtenPage = await engine.getPage(slug, { sourceId });
@@ -504,11 +529,11 @@ export async function writePageThrough(
 ): Promise<WriteThroughResult> {
   if (opts.lockAlreadyHeld) return writePageThroughUnlocked(engine, slug, opts);
   try {
-    return await withPageLock(
+    return await underSourceFilesystemLock(engine, slug, opts.sourceId ?? 'default', () => withPageLock(
       slug,
       () => writePageThroughUnlocked(engine, slug, opts),
       { sourceId: opts.sourceId ?? 'default' },
-    );
+    ));
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     opts.logger?.warn(`[write-through] failed for ${slug}: ${msg}`);
@@ -580,7 +605,7 @@ async function deletePageThroughUnlocked(
     if (!target.ok) return { removed: false, skipped: target.skipped };
     const { filePath } = target;
     if (!hasSourceFilesystemLock(target.writeRoot)) {
-      return await withSourceFilesystemLock(engine, target.writeRoot, () => deletePageThrough(engine, slug, opts));
+      return await withSourceFilesystemLock(engine, target.writeRoot, () => deletePageThroughUnlocked(engine, slug, opts));
     }
 
     if (!existsSync(filePath)) {
@@ -604,11 +629,11 @@ export async function deletePageThrough(
 ): Promise<DeleteThroughResult> {
   if (opts.lockAlreadyHeld) return deletePageThroughUnlocked(engine, slug, opts);
   try {
-    return await withPageLock(
+    return await underSourceFilesystemLock(engine, slug, opts.sourceId ?? 'default', () => withPageLock(
       slug,
       () => deletePageThroughUnlocked(engine, slug, opts),
       { sourceId: opts.sourceId ?? 'default' },
-    );
+    ));
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     opts.logger?.warn(`[write-through] delete failed for ${slug}: ${msg}`);

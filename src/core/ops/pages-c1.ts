@@ -11,7 +11,7 @@ import { loadConfig } from '../config.ts';
 import { parseMarkdown } from '../markdown.ts';
 import { loadActivePack } from '../schema-pack/load-active.ts';
 import { withPageLock } from '../page-lock.ts';
-import { deletePageThrough, resolvePageWriteTarget, writePageThrough } from '../write-through.ts';
+import { deletePageThrough, resolvePageWriteTarget, writePageThrough, underSourceFilesystemLock } from '../write-through.ts';
 import {
   applySparsePagePatch,
   CanonicalMutationError,
@@ -95,7 +95,7 @@ export async function deletePageOperationHandler(ctx: OperationContext, p: Recor
   const sandbox = ctx.viaSubagent === true
     && !(Array.isArray(ctx.allowedSlugPrefixes) && ctx.allowedSlugPrefixes.length > 0);
   try {
-    return await withPageLock(slug, async () => {
+    return await underSourceFilesystemLock(ctx.engine, slug, sourceId, () => withPageLock(slug, async () => {
       const target = sandbox ? undefined : await resolvePageWriteTarget(ctx.engine, slug, sourceId);
       const result = await ctx.engine.softDeletePage(slug, sourceOpts);
       if (result === null) {
@@ -107,7 +107,7 @@ export async function deletePageOperationHandler(ctx: OperationContext, p: Recor
         ? { removed: false, skipped: 'subagent_sandbox' as const }
         : await deletePageThrough(ctx.engine, slug, { sourceId, logger: ctx.logger, target, lockAlreadyHeld: true });
       return { status: 'soft_deleted', slug, source_id: sourceId, recoverable_until: 'now + 72h via restore_page', write_through: writeThrough };
-    }, { sourceId });
+    }, { sourceId }));
   } catch (error) {
     if (error instanceof OperationError) throw error;
     throw new OperationError('unavailable', `Could not acquire the canonical page lock for '${slug}'.`, 'Retry after the current writer completes.');
@@ -125,7 +125,7 @@ export async function restorePageOperationHandler(ctx: OperationContext, p: Reco
   const sandbox = ctx.viaSubagent === true
     && !(Array.isArray(ctx.allowedSlugPrefixes) && ctx.allowedSlugPrefixes.length > 0);
   try {
-    return await withPageLock(slug, async () => {
+    return await underSourceFilesystemLock(ctx.engine, slug, sourceId, () => withPageLock(slug, async () => {
       const ok = await ctx.engine.restorePage(slug, { sourceId });
       if (!ok) {
         const existing = await ctx.engine.getPage(slug, { includeDeleted: true, sourceId });
@@ -136,7 +136,7 @@ export async function restorePageOperationHandler(ctx: OperationContext, p: Reco
         ? { written: false, skipped: 'subagent_sandbox' as const }
         : await writePageThrough(ctx.engine, slug, { sourceId, logger: ctx.logger, lockAlreadyHeld: true });
       return { status: 'restored', slug, source_id: sourceId, write_through: writeThrough };
-    }, { sourceId });
+    }, { sourceId }));
   } catch (error) {
     if (error instanceof OperationError) throw error;
     throw new OperationError('unavailable', `Could not acquire the canonical page lock for '${slug}'.`, 'Retry after the current writer completes.');

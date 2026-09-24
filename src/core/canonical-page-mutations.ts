@@ -19,7 +19,7 @@ import { atomicWriteFileSync } from './atomic-write.ts';
 import { gbrainPath } from './config.ts';
 import { frontmatterBodyOffset, parseMarkdown, serializeMarkdown } from './markdown.ts';
 import { withPageLock } from './page-lock.ts';
-import { resolvePageWriteTarget, type PageWriteTarget } from './write-through.ts';
+import { resolvePageWriteTarget, underSourceFilesystemLock, type PageWriteTarget } from './write-through.ts';
 
 export type ProjectionState = 'current' | 'pending';
 
@@ -428,7 +428,7 @@ export async function commitCanonicalMutationV2(opts: {
     lockRoot: join(opts.lockRoot ?? gbrainPath('page-locks'), 'receipts-v2'),
   };
 
-  return withPageLock(receiptLockSlug, async () => withPageLock(opts.slug, async () => {
+  return underSourceFilesystemLock(opts.engine, opts.slug, sourceId, () => withPageLock(receiptLockSlug, async () => withPageLock(opts.slug, async () => {
     let prior = readIntentV2(path);
     if (prior) {
       assertJournalV2Envelope(prior, {
@@ -593,7 +593,7 @@ export async function commitCanonicalMutationV2(opts: {
         projection_error: message,
       };
     }
-  }, lockOpts), receiptLockOpts);
+  }, lockOpts), receiptLockOpts));
 }
 
 export async function commitCanonicalMutation<T>(opts: {
@@ -609,7 +609,7 @@ export async function commitCanonicalMutation<T>(opts: {
   lockRoot?: string;
 }): Promise<CanonicalMutationResult<T>> {
   const sourceId = opts.sourceId ?? 'default';
-  return withPageLock(opts.slug, async () => {
+  return underSourceFilesystemLock(opts.engine, opts.slug, sourceId, () => withPageLock(opts.slug, async () => {
     const current = await readCanonicalPage(opts.engine, opts.slug, sourceId);
     const candidate = opts.buildContent(current);
     const intendedRevision = exactCanonicalRevision(candidate);
@@ -731,5 +731,5 @@ export async function commitCanonicalMutation<T>(opts: {
         resumed: Boolean(resumable),
       };
     }
-  }, { timeoutMs: 30_000, sourceId, ...(opts.lockRoot ? { lockRoot: opts.lockRoot } : {}) });
+  }, { timeoutMs: 30_000, sourceId, ...(opts.lockRoot ? { lockRoot: opts.lockRoot } : {}) }));
 }
