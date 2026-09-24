@@ -84,6 +84,13 @@ export const EDITS: Edit[] = [
     find: "      autoLinks = { skipped: 'remote', hint };\n      autoTimeline = { skipped: 'remote', hint };",
     replace: "      autoLinks = { skipped: 'remote', hint: brandText(hint) };\n      autoTimeline = { skipped: 'remote', hint: brandText(hint) };",
     import: BRAND('../../', ['brandText']) },
+  // A connection's capabilities: `whoami` and the HTTP transport both return
+  // what this builds, and its repair told the customer's agent to run an
+  // engine CLI command on a host it cannot reach.
+  { file: 'src/core/harness/capabilities.ts',
+    find: '  return describeAuthCapabilities(auth, { surface, visibleOperations, delegatedTools: grantCatalog().delegateToolNames });',
+    replace: '  return brandCapabilities(describeAuthCapabilities(auth, { surface, visibleOperations, delegatedTools: grantCatalog().delegateToolNames }));',
+    import: BRAND('../../', ['brandCapabilities']) },
 ];
 
 function addImport(src: string, names: string[], from: string): string {

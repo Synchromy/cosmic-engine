@@ -104,3 +104,37 @@ export function isCredential(value: string, kind: string): boolean {
   const rest = kind.replace(/^gbrain_/, '');
   return CREDENTIAL_PREFIXES.some((p) => value.startsWith(p + rest));
 }
+
+/** A connection's capabilities (`whoami`, and the HTTP transport's copy of it)
+ *  as a customer's agent should read them.
+ *
+ *  Unbranded, a connection missing delegation is told to run
+ *  `gbrain auth rescope-client <id> --dry-run …`: a command on the engine's
+ *  host, which the customer's agent can neither reach nor run, naming the
+ *  engine. Branded, the repair is what the agent can actually do, which is
+ *  ask the operator of their Cosmic; the missing choices stay, because their
+ *  placeholders are neutral and say what the operator will have to decide. */
+export function brandCapabilities<T extends Record<string, unknown>>(caps: T, env: Record<string, string | undefined> = process.env): T {
+  const name = brandName(env);
+  if (!name) return caps;
+  const ask = `Ask the operator of this ${name} to review this connection's access.`;
+  const out: Record<string, unknown> = { ...caps };
+  const repair = caps.delegation_repair as Record<string, unknown> | null | undefined;
+  if (repair) {
+    out.delegation_repair = {
+      ...repair,
+      preview_command: null,
+      command_kind: repair.preview_command ? 'operator' : repair.command_kind,
+      operator_checks: (repair.operator_checks as string[] | undefined ?? []).map((c) => brandText(c, env)),
+      instructions: `Delegation needs a change to this connection's grant, made by the operator of this ${name}. `
+        + 'The missing choices below are what they will need to decide.',
+    };
+  }
+  if (Array.isArray(caps.remediation)) {
+    out.remediation = (caps.remediation as Array<{ reason: string; command: string }>).map((r) => ({
+      ...r,
+      command: /^\s*gbrain\s/.test(r.command) ? ask : brandText(r.command, env).replace(/\bhost operator\b/, `operator of this ${name}`),
+    }));
+  }
+  return out as T;
+}
