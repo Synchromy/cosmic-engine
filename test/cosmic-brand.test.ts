@@ -20,10 +20,18 @@ import { buildToolDefs } from '../src/mcp/tool-defs.ts';
 import { resolveMcpInstructions } from '../src/mcp/instructions.ts';
 import { OperationError } from '../src/core/ops/contract.ts';
 import { generateToken } from '../src/core/utils.ts';
-import { brandText, brandServerName, brandResourceName, isCredential } from '../src/cosmic/brand.ts';
+import { brandText, brandServerName, brandResourceName, isCredential, brandCapabilities } from '../src/cosmic/brand.ts';
+import { describeAuthCapabilities } from '../src/core/harness/capabilities.ts';
 import { apply } from '../scripts/cosmic-brand.ts';
 
 const remote = operations.filter((op) => !op.localOnly);
+
+/** khoa's own connection on 2026-09-24: read scope, no delegation. `whoami`
+ *  answered with `gbrain auth rescope-client …` repair commands. */
+const readOnly = () => describeAuthCapabilities({
+  token: 't', clientId: 'gbrain_cl_5f8e', clientName: 'khoa-cosmic-agent', scopes: ['read'],
+  sourceId: 'khoa', sourceActive: true, allowedSources: ['khoa'], grantRevision: 0, surface: 'starter',
+} as never, { surface: 'starter', visibleOperations: ['whoami'] });
 const LEAK = /(?<![\w-])gbrain(?![\w-])|gbrain:\/\/|GBRAIN_[A-Z_]+|\.gbrain-source|`gbrain /i;
 const RELEASE = /\bv0\.\d+(?:\.\d+)*/;
 const ISSUE = /#\d{4,5}\b/;
@@ -87,6 +95,17 @@ describe('branded: what a connected agent reads', () => {
     expect(isCredential(`cosmic_at_${'a'.repeat(64)}`, 'gbrain_cl_')).toBe(false);
   });
 
+  test("whoami's repair tells the agent what it can do, not an engine command", () => {
+    const before = readOnly();
+    expect(JSON.stringify(before)).toMatch(/gbrain auth rescope-client/);   // the leak, reproduced
+    const caps = brandCapabilities(before);
+    expect(JSON.stringify(caps)).not.toMatch(LEAK);
+    const repair = caps.delegation_repair as Record<string, unknown>;
+    expect(repair.preview_command).toBeNull();
+    expect(repair.missing_choices).toEqual((before.delegation_repair as Record<string, unknown>).missing_choices);
+    for (const r of caps.remediation as Array<{ command: string }>) expect(r.command).toMatch(/operator of this Cosmic/);
+  });
+
   test('an error suggestion does not send the agent to the engine CLI', () => {
     const e = new OperationError('schema_outdated', 'The brain schema is behind this gbrain release.',
       'Run `gbrain apply-migrations --yes` on the brain host. Then retry the call.');
@@ -113,5 +132,7 @@ describe('unbranded: byte-identical to upstream', () => {
     expect(brandResourceName('GBrain MCP Server')).toBe('GBrain MCP Server');
     expect(generateToken('gbrain_cl_').startsWith('gbrain_cl_')).toBe(true);
     expect(brandText('Run `gbrain doctor`.')).toBe('Run `gbrain doctor`.');
+    const caps = readOnly();
+    expect(brandCapabilities(caps)).toEqual(caps);
   });
 });
