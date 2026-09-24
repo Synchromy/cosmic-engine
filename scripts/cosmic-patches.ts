@@ -86,7 +86,8 @@ export function retarget(registerJson: string, tag: string): string {
  *  which side wins the textual merge does not matter; the tag's side is kept. */
 export function autoResolution(path: string, reg: Register): 'ledger' | 'regenerate' | null {
   if (path === reg.ledger) return 'ledger';
-  if (reg.regenerate.some(r => r.path === path)) return 'regenerate';
+  // An entry ending in `/` is a generated TREE (plugin/): any file under it.
+  if (reg.regenerate.some(r => r.path.endsWith('/') ? path.startsWith(r.path) : r.path === path)) return 'regenerate';
   return null;
 }
 

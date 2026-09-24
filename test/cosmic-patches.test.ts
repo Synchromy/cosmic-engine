@@ -93,6 +93,10 @@ describe('the patch register', () => {
     expect(autoResolution(reg.ledger, reg)).toBe('ledger');
     for (const r of reg.regenerate) expect(autoResolution(r.path, reg)).toBe('regenerate');
     expect(autoResolution('src/core/ops/pages.ts', reg)).toBeNull();
+    // A generated tree: every file under it, and nothing beside it.
+    expect(autoResolution('plugin/README.md', reg)).toBe('regenerate');
+    expect(autoResolution('plugin-variants/codex/skills/x.md', reg)).toBe('regenerate');
+    expect(autoResolution('plugins.md', reg)).toBeNull();
   });
 
   test('lane naming matches the lanes that exist', () => {

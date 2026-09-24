@@ -251,6 +251,30 @@
         "run",
         "scripts/generate-tool-catalog.ts"
       ]
+    },
+    {
+      "path": "plugin/",
+      "command": [
+        "bun",
+        "run",
+        "scripts/generate-plugin-tree.ts",
+        "--out",
+        "plugin",
+        "--variants-out",
+        "plugin-variants"
+      ]
+    },
+    {
+      "path": "plugin-variants/",
+      "command": [
+        "bun",
+        "run",
+        "scripts/generate-plugin-tree.ts",
+        "--out",
+        "plugin",
+        "--variants-out",
+        "plugin-variants"
+      ]
     }
   ],
   "ledger": "scripts/module-size-limits.tsv",
