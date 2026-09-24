@@ -1671,7 +1671,7 @@ export interface TimelineAnchorInput {
 export function deriveTimelineAnchor(input: TimelineAnchorInput): TimelineCandidate | null {
   const { slug, title, effectiveDate, effectiveDateSource } = input;
   if (!effectiveDate) return null;
-  // 'fallback' === updated_at; the rest ('event_date'|'date'|'published'|'filename')
+  // 'fallback' === updated_at; the rest ('event_date'|'date'|'published'|'filename'|'path'|'created')
   // are real content dates. null/undefined source is not trustworthy either.
   if (effectiveDateSource == null || effectiveDateSource === 'fallback') return null;
   const dt = typeof effectiveDate === 'string' ? new Date(effectiveDate) : effectiveDate;
