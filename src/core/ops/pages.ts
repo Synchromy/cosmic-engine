@@ -8,6 +8,7 @@
  */
 
 import type { BrainEngine } from '../engine.ts';
+import { brandText } from '../../cosmic/brand.ts';
 import { clampSearchLimit } from '../engine.ts';
 import type { Page, PageType } from '../types.ts';
 import { importFromContent } from '../import-file.ts';
@@ -659,8 +660,8 @@ const put_page: Operation = {
       const hint = 'auto_link/auto_timeline run for trusted local writers only; '
         + 'body wikilinks were saved as text but NOT reconciled into the graph. '
         + 'Use local `gbrain capture`/`gbrain call put_page` for link extraction.';
-      autoLinks = { skipped: 'remote', hint };
-      autoTimeline = { skipped: 'remote', hint };
+      autoLinks = { skipped: 'remote', hint: brandText(hint) };
+      autoTimeline = { skipped: 'remote', hint: brandText(hint) };
     } else if (result.parsedPage) {
       try {
         const enabled = await isAutoLinkEnabled(ctx.engine);

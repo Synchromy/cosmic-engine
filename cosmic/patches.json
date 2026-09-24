@@ -165,6 +165,24 @@
       "tests": [
         "test/ops-expose-what-the-engine-can-do.test.ts"
       ]
+    },
+    {
+      "id": "cosmic-brand",
+      "script": "scripts/cosmic-brand.ts",
+      "what": "Cosmic's name on what the engine tells a connected agent and the public: handshake, tool descriptions, hints, server and resource names, new credential prefixes (cosmic_). Inert unless COSMIC_BRAND is set",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-09-24",
+        "note": "ours by design: Synchromy's product name, never upstream (Synchromy/cosmic-hub#691)"
+      },
+      "since": "2026-09-24",
+      "depends_on": [],
+      "hub_uses": "every connected agent; switched on by COSMIC_BRAND in the hub image",
+      "tests": [
+        "test/cosmic-brand.test.ts"
+      ]
     }
   ],
   "carry": [
@@ -195,6 +213,18 @@
     {
       "path": "test/effective-date-contract.test.ts",
       "why": "the frontmatter date keys are a contract (cosmic-engine #12)"
+    },
+    {
+      "path": "src/cosmic/brand.ts",
+      "why": "the cosmic-brand patch's functions"
+    },
+    {
+      "path": "scripts/cosmic-brand.ts",
+      "why": "the cosmic-brand patch: wires brand.ts into the engine"
+    },
+    {
+      "path": "test/cosmic-brand.test.ts",
+      "why": "the cosmic-brand leak test"
     }
   ],
   "regenerate": [

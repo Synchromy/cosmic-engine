@@ -33,7 +33,14 @@ import { tmpdir } from 'node:os';
 
 export interface Patch {
   id: string;
-  branch: string;
+  /** A branch merged onto the tag... */
+  branch?: string;
+  /** ...or a script run on the result, after the branches and the carried
+   *  files. For a change that must survive upstream rewording: a branch
+   *  touching text upstream edits every release conflicts on most rebuilds,
+   *  a script with exact anchors fails only when an anchor moves, and says
+   *  which. Exactly one of the two. */
+  script?: string;
   what: string;
   state: 'permanent' | 'upstream-open' | 'landed';
   upstream: { pr: number | null; seen: 'open' | 'closed' | 'merged' | 'none'; checked: string; note?: string };
@@ -150,6 +157,7 @@ async function build(tag: string, reg: Register, o: BuildOpts): Promise<{ dir: s
   const outcomes: Outcome[] = [];
   const failed = new Set<string>();
   for (const p of reg.patches) {
+    if (p.script) continue;   // applied below, once the tree is whole
     const blocker = p.depends_on.find(d => failed.has(d));
     if (blocker) { outcomes.push({ id: p.id, result: 'skipped', because: blocker }); failed.add(p.id); continue; }
     const merge = await $`git -C ${dir} merge -q --no-edit --no-ff origin/${p.branch}`.nothrow().quiet();
@@ -198,7 +206,29 @@ async function build(tag: string, reg: Register, o: BuildOpts): Promise<{ dir: s
   if ((await $`git -C ${dir} status --porcelain`.quiet().text()).trim())
     await $`git -C ${dir} commit -qm ${`chore: carry the Synchromy patch tooling and kept tests onto ${tag}`}`.quiet();
 
-  if (o.regen || o.test) await $`bun install --frozen-lockfile --silent`.cwd(dir).quiet();
+  if (o.regen || o.test || reg.patches.some(p => p.script)) await $`bun install --frozen-lockfile --silent`.cwd(dir).quiet();
+
+  // Script patches run on the whole tree: every branch merged and every
+  // carried file present, since a script may be one of the carried files.
+  // Before regeneration, so generated files describe the patched engine.
+  for (const p of reg.patches.filter(x => x.script)) {
+    const blocker = p.depends_on.find(d => failed.has(d));
+    if (blocker) { outcomes.push({ id: p.id, result: 'skipped', because: blocker }); failed.add(p.id); continue; }
+    const run = await $`bun ${p.script!}`.cwd(dir).nothrow().quiet();
+    if (run.exitCode !== 0) {
+      const missing = `${run.stdout}`.split('\n').filter(l => l.startsWith('MISSING')).map(l => l.replace(/^MISSING\s+/, ''));
+      outcomes.push({ id: p.id, result: 'conflict', files: missing.length ? missing : [`${p.script} exited ${run.exitCode}`] });
+      failed.add(p.id);
+      if (!o.keepGoing) return { dir, outcomes, ok: false, testsOk: null, sha: '' };
+      continue;
+    }
+    outcomes.push({ id: p.id, result: 'merged' });
+    if ((await $`git -C ${dir} status --porcelain`.quiet().text()).trim()) {
+      await $`git -C ${dir} add -A`.quiet();
+      await $`git -C ${dir} commit -qm ${`patch: ${p.id} (${p.script})`}`.quiet();
+    }
+  }
+
   if (o.regen) {
     for (const r of reg.regenerate) {
       const run = await $`${r.command}`.cwd(dir).nothrow().quiet();
@@ -246,7 +276,7 @@ async function main(argv: string[]) {
 
   if (cmd === 'list') {
     for (const p of reg.patches)
-      console.log([p.id.padEnd(36), p.state.padEnd(14), (p.upstream.pr ? `#${p.upstream.pr}` : '-').padEnd(6), p.upstream.seen.padEnd(7), p.since].join(' '));
+      console.log([p.id.padEnd(36), p.state.padEnd(14), (p.upstream.pr ? `#${p.upstream.pr}` : '-').padEnd(6), p.upstream.seen.padEnd(7), p.since, p.script ? `script ${p.script}` : ''].join(' '));
     return 0;
   }
 

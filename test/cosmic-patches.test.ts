@@ -12,6 +12,7 @@ import { describe, test, expect } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { operationsByName } from '../src/core/operations.ts';
 import { computeEffectiveDate } from '../src/core/effective-date.ts';
+import { apply as brandCheck } from '../scripts/cosmic-brand.ts';
 import { loadRegister, autoResolution, laneFor, retarget, type Register } from '../scripts/cosmic-patches.ts';
 
 const reg: Register = loadRegister('.');
@@ -48,9 +49,22 @@ const PROBES: Record<string, () => void> = {
   'ops-expose-what-the-engine-can-do': () => {
     expect(existsSync('test/ops-expose-what-the-engine-can-do.test.ts')).toBe(true);
   },
+  'cosmic-brand': () => {
+    // Every anchor applied; test/cosmic-brand.test.ts is the leak test proper.
+    const r = brandCheck('.', true);
+    expect(r.missing).toEqual([]);
+    expect(r.applied).toEqual([]);
+  },
 };
 
 describe('the patch register', () => {
+  test('every patch is a branch or a script, never both, never neither', () => {
+    for (const p of reg.patches) expect(!!p.branch !== !!p.script, p.id).toBe(true);
+    for (const p of reg.patches.filter(x => x.script)) {
+      expect(reg.carry.map(c => c.path), `${p.id}: its script must be carried`).toContain(p.script);
+    }
+  });
+
   test('ids are unique and every dependency is listed earlier', () => {
     const seen = new Set<string>();
     for (const p of reg.patches) {

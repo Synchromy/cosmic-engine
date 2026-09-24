@@ -7,6 +7,7 @@
  */
 
 import type { Operation } from './contract.ts';
+import { isCredential } from '../../cosmic/brand.ts';
 import { OperationError } from './contract.ts';
 import { sourceScopeOpts } from './context.ts';
 import { resolveAuthCapabilities } from '../harness/capabilities.ts';
@@ -51,7 +52,7 @@ const whoami: Operation = {
     // OAuth tokens have client_id starting with 'gbrain_cl_'; legacy
     // access_tokens reuse `name` as both clientId and clientName (verifyAccessToken
     // at oauth-provider.ts:417-430). Detect by inspecting the prefix.
-    const isOauth = ctx.auth.clientId.startsWith('gbrain_cl_');
+    const isOauth = isCredential(ctx.auth.clientId, 'gbrain_cl_');
     if (isOauth) {
       return {
         transport: 'oauth',
