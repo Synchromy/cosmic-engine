@@ -326,6 +326,7 @@ const EXPECTED_OUTCOME: Record<string, Outcome> = {
   extract_entities: 'error',
   extract_facts: 'error',
   forget_fact: 'error',
+  delete_fact: 'error',  // no id/provenance in the sweep's default params → invalid_params
   schema_apply_mutations: 'error',
   reload_schema_pack: 'ok',
   run_onboard: 'ok',
