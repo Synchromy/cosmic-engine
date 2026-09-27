@@ -167,6 +167,26 @@
       ]
     },
     {
+      "id": "delete-fence-fact",
+      "branch": "upstream/delete-fence-fact",
+      "what": "delete_fact: delete one fence row and its facts row together, under the source and page locks, for the writer that names the row's provenance exactly; records no withdrawal",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-09-27",
+        "note": "carried patch only for now (Khoa, 2026-09-27): not offered upstream, overriding the task's 'upstream first'"
+      },
+      "since": "2026-09-27",
+      "depends_on": [
+        "c1-contained-mutations"
+      ],
+      "hub_uses": "delete_fact: the dated-facts removal job (C-39, add-dated-facts), not yet written",
+      "tests": [
+        "test/delete-fence-fact.test.ts"
+      ]
+    },
+    {
       "id": "cosmic-brand",
       "script": "scripts/cosmic-brand.ts",
       "what": "Cosmic's name on what the engine tells a connected agent and the public: handshake, tool descriptions, hints, server and resource names, new credential prefixes (cosmic_). Inert unless COSMIC_BRAND is set",

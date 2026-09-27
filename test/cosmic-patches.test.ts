@@ -49,6 +49,10 @@ const PROBES: Record<string, () => void> = {
   'ops-expose-what-the-engine-can-do': () => {
     expect(existsSync('test/ops-expose-what-the-engine-can-do.test.ts')).toBe(true);
   },
+  'delete-fence-fact': () => {
+    expect(operationsByName.delete_fact).toBeDefined();
+    expect(operationsByName.delete_fact.params.provenance?.required).toBe(true);
+  },
   'cosmic-brand': () => {
     // Every anchor applied; test/cosmic-brand.test.ts is the leak test proper.
     const r = brandCheck('.', true);
