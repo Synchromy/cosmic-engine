@@ -7,9 +7,12 @@
  * model + token usage. This module:
  *
  *   - attributes a best-effort PHASE via AsyncLocalStorage (`withChatPhase`):
- *     the minion worker wraps handler execution in `job:<name>`; direct CLI /
- *     op callers record with phase NULL unless they opt in. Attribution is
- *     advisory — a missing phase never blocks the record.
+ *     the minion worker wraps handler execution in `job:<name>`; MCP tool
+ *     dispatch (src/mcp/dispatch.ts) wraps the op handler in
+ *     `mcp:<client>:<operation>` when no phase is already set; direct CLI /
+ *     op callers record with phase NULL unless they opt in. An inner
+ *     explicit phase always wins. Attribution is advisory — a missing phase
+ *     never blocks the record.
  *   - prices the call from CANONICAL_PRICING (`estimateChatCostUsd`),
  *     including cache_read/cache_write tokens at the provider's cache rates
  *     when the table carries them (Anthropic), falling back to the input
@@ -58,6 +61,15 @@ export function withChatPhase<T>(phase: string, fn: () => T): T {
 
 export function currentChatPhase(): string | null {
   return __chatPhaseStore.getStore() ?? null;
+}
+
+/**
+ * Run `fn` under `phase`, or outside any phase when it is null. For work
+ * that is queued in one async context and run from another (the facts
+ * queue): capture `currentChatPhase()` when queueing, run with it later.
+ */
+export function withChatPhaseOrNone<T>(phase: string | null, fn: () => T): T {
+  return phase === null ? __chatPhaseStore.exit(fn) : __chatPhaseStore.run(phase, fn);
 }
 
 /**
