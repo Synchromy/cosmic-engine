@@ -67,6 +67,12 @@ describe('mcpChatPhase', () => {
     expect(mcpChatPhase(authFor({ clientName: '  ', clientId: '' }), 'think')).toBe('mcp:unknown:think');
   });
 
+  test('a blank or whitespace-only client_name falls through to the client id', () => {
+    expect(mcpChatPhase(authFor({ clientName: '' }), 'think')).toBe('mcp:client-id-1:think');
+    expect(mcpChatPhase(authFor({ clientName: '   ' }), 'think')).toBe('mcp:client-id-1:think');
+    expect(mcpChatPhase(authFor({ clientName: ' \t ' }), 'think')).toBe('mcp:client-id-1:think');
+  });
+
   test('control characters are replaced and a long name is clamped; the token is never read', () => {
     const phase = mcpChatPhase(authFor({ clientName: 'a\nb\tc' + 'x'.repeat(500) }), 'think');
     expect(phase.startsWith('mcp:a_b_c')).toBe(true);

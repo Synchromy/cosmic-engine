@@ -493,14 +493,15 @@ const MCP_PHASE_CLIENT_MAX_CHARS = 128;
  * The chat usage phase for a tool call an MCP client made:
  * `mcp:<client>:<operation>`. The client is the name the transports already
  * log as the agent (OAuth `client_name`, else the client id; the legacy
- * token name), and "unknown" when the call carries no auth (stdio). Control
+ * token name), and "unknown" when the call carries no auth (stdio). Each
+ * candidate is cleaned first, so a blank name falls through to the id. Control
  * characters are replaced and the name is clamped so a client-chosen name
  * cannot bloat or break the ledger. Operation names contain no ':', so the
  * operation is always the last segment. Never reads the token.
  */
 export function mcpChatPhase(auth: AuthInfo | undefined, opName: string): string {
-  const raw = (auth?.clientName ?? auth?.clientId ?? '').replace(/[\u0000-\u001f\u007f]/g, '_').trim();
-  const client = raw.length > 0 ? raw.slice(0, MCP_PHASE_CLIENT_MAX_CHARS) : 'unknown';
+  const clean = (v: string | undefined) => (v ?? '').trim().replace(/[\u0000-\u001f\u007f]/g, '_');
+  const client = (clean(auth?.clientName) || clean(auth?.clientId) || 'unknown').slice(0, MCP_PHASE_CLIENT_MAX_CHARS);
   return `mcp:${client}:${opName}`;
 }
 
