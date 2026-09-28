@@ -167,6 +167,24 @@
       ]
     },
     {
+      "id": "mcp-phase-tag",
+      "branch": "upstream/mcp-phase-tag",
+      "what": "model calls an MCP client originated log chat_usage_log phase mcp:<client>:<operation>; an inner explicit phase keeps its name; facts-queue jobs keep the queueing caller's phase",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-09-29",
+        "note": "no upstream PR yet; upstream-bound, offering it needs a decision"
+      },
+      "since": "2026-09-29",
+      "depends_on": [],
+      "hub_uses": "pricing track Te1 (cosmic-hub #991, epic #985): chat_usage_log grouped by phase separates agent-originated reasoning from extraction and background jobs",
+      "tests": [
+        "test/mcp-chat-phase.test.ts"
+      ]
+    },
+    {
       "id": "cosmic-brand",
       "script": "scripts/cosmic-brand.ts",
       "what": "Cosmic's name on what the engine tells a connected agent and the public: handshake, tool descriptions, hints, server and resource names, new credential prefixes (cosmic_). Inert unless COSMIC_BRAND is set",

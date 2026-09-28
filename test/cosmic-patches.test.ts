@@ -49,6 +49,9 @@ const PROBES: Record<string, () => void> = {
   'ops-expose-what-the-engine-can-do': () => {
     expect(existsSync('test/ops-expose-what-the-engine-can-do.test.ts')).toBe(true);
   },
+  'mcp-phase-tag': () => {
+    expect(readFileSync('src/mcp/dispatch.ts', 'utf8')).toContain('withChatPhase(mcpChatPhase(ctx.auth, name), run)');
+  },
   'cosmic-brand': () => {
     // Every anchor applied; test/cosmic-brand.test.ts is the leak test proper.
     const r = brandCheck('.', true);
