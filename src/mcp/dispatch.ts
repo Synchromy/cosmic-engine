@@ -28,6 +28,7 @@ import {
 } from './validate-params.ts';
 import { backupCheckDisabled, backupNagGate, backupNoticeText, loadBackupStatus } from '../core/backup/status-file.ts';
 import { maybeRefreshBackupStatusInProcess } from '../core/backup/coverage.ts';
+import { withChatPhase, currentChatPhase } from '../core/ai/chat-usage.ts';
 
 // WP3: normalization + validation moved to validate-params.ts (direct unit
 // surface). Re-exported here so existing imports/tests keep working.
@@ -486,6 +487,23 @@ export function buildOperationContext(
   };
 }
 
+const MCP_PHASE_CLIENT_MAX_CHARS = 128;
+
+/**
+ * The chat usage phase for a tool call an MCP client made:
+ * `mcp:<client>:<operation>`. The client is the name the transports already
+ * log as the agent (OAuth `client_name`, else the client id; the legacy
+ * token name), and "unknown" when the call carries no auth (stdio). Control
+ * characters are replaced and the name is clamped so a client-chosen name
+ * cannot bloat or break the ledger. Operation names contain no ':', so the
+ * operation is always the last segment. Never reads the token.
+ */
+export function mcpChatPhase(auth: AuthInfo | undefined, opName: string): string {
+  const raw = (auth?.clientName ?? auth?.clientId ?? '').replace(/[\u0000-\u001f\u007f]/g, '_').trim();
+  const client = raw.length > 0 ? raw.slice(0, MCP_PHASE_CLIENT_MAX_CHARS) : 'unknown';
+  return `mcp:${client}:${opName}`;
+}
+
 /**
  * Resolve operation, validate params, build context, invoke handler, format result.
  *
@@ -669,7 +687,15 @@ export async function dispatchToolCall(
     // run inside the handlers; this stops an unfenced write op from being
     // a silent hole. See CLIENT_FENCED_WRITE_OPS in operations.ts.
     enforceBoundClientOpAllowList(ctx.auth, op);
-    const result = await op.handler(ctx, safeParams);
+    // Every gateway.chat() the handler makes (think, synthesize, query
+    // expansion, extraction it triggers) is attributed to this client and
+    // operation in chat_usage_log. An explicit phase set further in (a job,
+    // the synthesize cycle) still wins, and a call that already runs under a
+    // phase keeps it.
+    const run = () => op.handler(ctx, safeParams);
+    const result = await (currentChatPhase() === null
+      ? withChatPhase(mcpChatPhase(ctx.auth, name), run)
+      : run());
     // [E4] verb success metrics: budget drops + entity hit/miss when present.
     {
       const r = result as { dropped_count?: number; found?: boolean; status?: string } | null;
