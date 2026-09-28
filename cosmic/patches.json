@@ -169,7 +169,7 @@
     {
       "id": "mcp-phase-tag",
       "branch": "upstream/mcp-phase-tag",
-      "what": "model calls an MCP client originated log chat_usage_log phase mcp:<client>:<operation>; an inner explicit phase keeps its name; facts-queue jobs keep the queueing caller's phase",
+      "what": "model calls an MCP client originated log chat_usage_log phase mcp:<client>:<operation>, which records where the call came from; an inner explicit phase keeps its name; facts-queue jobs keep the queueing caller's phase, so extraction queued by put_page logs as mcp:<client>:put_page",
       "state": "permanent",
       "upstream": {
         "pr": null,
@@ -179,7 +179,7 @@
       },
       "since": "2026-09-29",
       "depends_on": [],
-      "hub_uses": "pricing track Te1 (cosmic-hub #991, epic #985): chat_usage_log grouped by phase separates agent-originated reasoning from extraction and background jobs",
+      "hub_uses": "pricing track Te1 (cosmic-hub #991, epic #985): the billing consumer classifies a row by the operation after the last colon of its phase; put_page extraction is excluded from credits (the write allowance covers it)",
       "tests": [
         "test/mcp-chat-phase.test.ts"
       ]
