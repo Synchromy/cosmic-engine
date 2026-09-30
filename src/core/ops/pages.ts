@@ -462,6 +462,11 @@ const put_page: Operation = {
       }
       result = await importFromContent(ctx.engine, slug, p.content as string, {
         noEmbed,
+        // Cosmic C-19: an embedder outage lands the page waiting, not refused.
+        // One retry, no wait over 3s: the batch ladder's ~2 minutes of 429
+        // backoff outlasts the gateway and the client, which then write again.
+        deferOnEmbedOutage: !noEmbed,
+        embedRetry: { maxRetries: 1, maxDelayMs: 3_000 },
       // v0.42 (#1699): untrusted callers can't smuggle gate-owned frontmatter
       // markers (quarantine/content_flag/embed_skip). Fail-closed — anything
       // not strictly local is remote (matches CV6 / v0.26.9 F7b posture).
@@ -850,6 +855,7 @@ const put_page: Operation = {
       // importFromContent's error text through. capture delegates here, so
       // it inherits the reason too.
       ...(result.error ? { error: result.error } : {}),
+      ...(result.embedding ? { embedding: result.embedding } : {}),
       ...(chunkSkipReason ? { chunk_skip_reason: chunkSkipReason } : {}),
       ...(autoLinks ? { auto_links: autoLinks } : {}),
       ...(autoTimeline ? { auto_timeline: autoTimeline } : {}),
