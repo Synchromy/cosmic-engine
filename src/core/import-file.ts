@@ -49,6 +49,7 @@ import { loadSearchModeConfig, resolveSearchMode } from './search/mode.ts';
 import { normalizeAliasList } from './search/alias-normalize.ts';
 import { isUndefinedTableError, warnOncePerProcess, validateSlug, contentHash, contentHashLegacy, ATOMS_SCAN_HASH_KEY } from './utils.ts';
 import { decorateEmbeddingDimError } from './embedding-dim-check.ts';
+import { embedOutageBreakerOpen, ensureEmbedWaitingTable, isEmbedOutageError, noteEmbedHealthy, noteEmbedOutage } from './embed-outage.ts';
 import { computeCorpusGeneration, loadSourceRow } from './contextual-retrieval-service.ts';
 import { DEFAULT_SYNOPSIS_MODEL } from './page-summary.ts';
 import { runGuardrails } from './guardrails.ts';
@@ -236,6 +237,7 @@ export interface ImportResult {
   status: 'imported' | 'skipped' | 'error';
   chunks: number;
   error?: string;
+  embedding?: 'waiting';
   /**
    * Parsed page content. Present for status='imported' AND status='skipped'
    * (skip happens when content is identical to existing page; auto-link still
@@ -295,6 +297,14 @@ export async function importFromContent(
   content: string,
   opts: {
     noEmbed?: boolean;
+    /**
+     * Cosmic C-19, put_page only: when the embedder is OUT (see
+     * embed-outage.ts), land the page without its embedding and mark it
+     * waiting instead of throwing. Every other caller keeps strict errors.
+     */
+    deferOnEmbedOutage?: boolean;
+    /** Bounds on the inline embed's retry ladder, for interactive callers. */
+    embedRetry?: { maxRetries?: number; maxDelayMs?: number };
     sourceId?: string;
     /**
      * v0.29.1: basename without extension for filename-date precedence on
@@ -915,6 +925,7 @@ export async function importFromContent(
     effectiveCRMode = resolution.mode === 'per_chunk_synopsis' ? 'title' : resolution.mode;
   }
 
+  let embeddingWaiting = false;
   if (!opts.noEmbed && chunks.length > 0) {
     const safeTitle = sanitizeTitle(parsed.title);
     const prefix =
@@ -924,12 +935,25 @@ export async function importFromContent(
     const wrappedTexts = prefix
       ? chunks.map((c) => wrapChunkForEmbedding(c.chunk_text, prefix, c.chunk_source))
       : chunks.map((c) => c.chunk_text);
-    const embeddings = await embedBatchWithBackoff(wrappedTexts);
-    for (let i = 0; i < chunks.length; i++) {
-      chunks[i].embedding = embeddings[i];
-      // token_count tracks the wrapped string length so cost reporting
-      // reflects what we actually sent to the embedder.
-      chunks[i].token_count = Math.ceil(wrappedTexts[i].length / 4);
+    // An open breaker asks once, no retries: only the embedder's answer tells an
+    // outage from a dimension mismatch, oversize payload or bad input (throw).
+    const breaker = opts.deferOnEmbedOutage && embedOutageBreakerOpen();
+    const retry = breaker ? { ...opts.embedRetry, maxRetries: 0 } : (opts.embedRetry ?? {});
+    try {
+      const embeddings = await embedBatchWithBackoff(wrappedTexts, retry);
+      for (let i = 0; i < chunks.length; i++) {
+        chunks[i].embedding = embeddings[i];
+        // token_count tracks the wrapped string length so cost reporting
+        // reflects what we actually sent to the embedder.
+        chunks[i].token_count = Math.ceil(wrappedTexts[i].length / 4);
+      }
+      if (opts.deferOnEmbedOutage) noteEmbedHealthy();
+    } catch (error) {
+      // C-19: only an outage is admitted. A dimension mismatch, oversize
+      // payload or bad input still propagates (Codex C2 holds for those).
+      if (!opts.deferOnEmbedOutage || !isEmbedOutageError(error)) throw error;
+      noteEmbedOutage();
+      embeddingWaiting = true;
     }
   }
 
@@ -954,6 +978,9 @@ export async function importFromContent(
   // schema DEFAULT — required for multi-source brains; harmless ('default')
   // for single-source callers.
   const txOpts = { sourceId: sourceId ?? 'default' };
+  // A later healthy put clears a prior outage marker, so the idempotent table
+  // must exist even when this invocation itself did not defer.
+  if (opts.deferOnEmbedOutage) await ensureEmbedWaitingTable(engine);
   await engine.transaction(async (tx) => {
     if (existing) await tx.createVersion(slug, txOpts);
 
@@ -1003,7 +1030,7 @@ export async function importFromContent(
     // UPDATE that runs after putPage's INSERT/UPDATE so the row exists.
     // For opts.noEmbed callers, we skip stamping — the next embed pass
     // (gbrain embed --stale or contextual reindex Minion) will set it.
-    if (!opts.noEmbed) {
+    if (!opts.noEmbed && !embeddingWaiting) {
       await tx.updatePageContextualRetrievalState(
         slug,
         sourceId ?? 'default',
@@ -1045,7 +1072,7 @@ export async function importFromContent(
       // embedded (not --no-embed), so a later model/dims swap is detectable
       // as stale via embed --stale. The deferred/backfill + per-slug embed
       // paths stamp too; this covers the inline import/sync path.
-      if (!opts.noEmbed) {
+      if (!opts.noEmbed && !embeddingWaiting) {
         // D9: signature is null when the gateway is unconfigured — skip the
         // stamp (a wrong signature is worse than none).
         const importSig = currentEmbeddingSignature();
@@ -1061,6 +1088,16 @@ export async function importFromContent(
     // write or a failed transaction must never certify old stored fragments.
     await tx.executeRaw('UPDATE pages SET chunker_version = $1 WHERE source_id = $2 AND slug = $3',
       [MARKDOWN_CHUNKER_VERSION, txOpts.sourceId, slug]);
+    // C-19 marker, in the page's own transaction. Only put_page writes
+    // (deferOnEmbedOutage) touch it, and the table is ensured above for them;
+    // sync and every other importer never reference it. `since` keeps the
+    // first outage write.
+    if (embeddingWaiting) {
+      await tx.executeRaw(`INSERT INTO cosmic_embed_waiting (source_id, slug, reason) VALUES ($1, $2, $3)
+        ON CONFLICT (source_id, slug) DO UPDATE SET reason = EXCLUDED.reason`, [txOpts.sourceId, slug, 'embed_outage']);
+    } else if (opts.deferOnEmbedOutage && !opts.noEmbed) {
+      await tx.executeRaw('DELETE FROM cosmic_embed_waiting WHERE source_id = $1 AND slug = $2', [txOpts.sourceId, slug]);
+    }
 
     // v0.19.0 E1 — doc↔impl linking: if this markdown page cites code paths
     // (e.g. 'src/core/sync.ts:42'), create bidirectional edges to the code
@@ -1155,6 +1192,7 @@ export async function importFromContent(
     ...(pageQuarantined ? { quarantined: true } : {}),
     ...(pageFlagged ? { flagged: true, flag_reason: pageFlagReason } : {}),
     ...(typeWarning ? { type_warning: typeWarning } : {}),
+    ...(embeddingWaiting ? { embedding: 'waiting' as const } : {}),
   };
 }
 

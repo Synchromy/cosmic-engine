@@ -49,6 +49,11 @@ const PROBES: Record<string, () => void> = {
   'ops-expose-what-the-engine-can-do': () => {
     expect(existsSync('test/ops-expose-what-the-engine-can-do.test.ts')).toBe(true);
   },
+  'embed-outage-defer': () => {
+    expect(existsSync('src/core/embed-outage.ts')).toBe(true);
+    expect(readFileSync('src/core/ops/pages.ts', 'utf8')).toContain('deferOnEmbedOutage: !noEmbed');
+    expect(readFileSync('src/commands/embed.ts', 'utf8')).toContain("args.includes('--waiting')");
+  },
   'cosmic-brand': () => {
     // Every anchor applied; test/cosmic-brand.test.ts is the leak test proper.
     const r = brandCheck('.', true);

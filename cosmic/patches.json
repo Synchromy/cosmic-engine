@@ -167,6 +167,26 @@
       ]
     },
     {
+      "id": "embed-outage-defer",
+      "branch": "upstream/embed-outage-defer",
+      "what": "an embedder outage (401/402/403, key limit, 429 after one capped retry, 5xx, refused connection) lands a put_page write without its embedding, marked in cosmic_embed_waiting; `gbrain embed --waiting` catches it up and get_health counts the marked pages. A dimension mismatch, oversize payload or bad input still throws",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-09-30",
+        "note": "carried patch, not offered upstream: it relaxes upstream's deliberate no-silent-unembedded-pages rule (Codex C2), which holds here only because the waiting pages are counted and drained"
+      },
+      "since": "2026-09-30",
+      "depends_on": [
+        "c1-contained-mutations"
+      ],
+      "hub_uses": "the reconcile-loop catch-up tick and the dashboard's waiting banner (C-19, add-write-queue-for-outages), not yet written",
+      "tests": [
+        "test/embed-outage.test.ts"
+      ]
+    },
+    {
       "id": "cosmic-brand",
       "script": "scripts/cosmic-brand.ts",
       "what": "Cosmic's name on what the engine tells a connected agent and the public: handshake, tool descriptions, hints, server and resource names, new credential prefixes (cosmic_). Inert unless COSMIC_BRAND is set",
