@@ -98,15 +98,29 @@ describe('sending during an outage', () => {
     expect(calls).toBe(2);   // one try, one retry
   }, 15000);
 
-  test('a second write to the same page keeps one marker; the breaker skips the embed call', async () => {
-    refuse(() => status(402));
+  test('a second write to the same page keeps one marker; the breaker allows one call, no retry', async () => {
+    refuse(() => status(429, 'rate limited'));
     await put.handler(ctx(), { slug: 'notes/twice', content: '# Twice\n\nfirst' });
     const before = calls;
     const r = await put.handler(ctx(), { slug: 'notes/twice', content: '# Twice\n\nsecond' }) as Record<string, unknown>;
     expect(r.embedding).toBe('waiting');
-    expect(calls).toBe(before);
+    expect(calls).toBe(before + 1);
     expect(await countEmbedWaiting(engine)).toBe(1);
     expect((await engine.getPage('notes/twice', { sourceId: 'default' }))?.compiled_truth).toContain('second');
+  }, 15000);
+
+  test('while the breaker is open, bad input and a dimension mismatch still throw and are not marked', async () => {
+    refuse(() => status(402));
+    await put.handler(ctx(), { slug: 'notes/first', content: '# First\n\nbody' });
+    for (const [slug, err] of [
+      ['notes/bad-open', () => status(400, 'bad request: invalid input')],
+      ['notes/dim-open', () => new Error('expected 1536 dimensions, not 512')],
+    ] as const) {
+      refuse(err);
+      await expect(put.handler(ctx(), { slug, content: '# Later\n\nbody' })).rejects.toThrow();
+      expect(await engine.getPage(slug, { sourceId: 'default' })).toBeNull();
+    }
+    expect(await countEmbedWaiting(engine)).toBe(1);
   });
 
   test('a later healthy write embeds the page and clears its marker', async () => {
