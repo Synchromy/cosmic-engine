@@ -935,25 +935,25 @@ export async function importFromContent(
     const wrappedTexts = prefix
       ? chunks.map((c) => wrapChunkForEmbedding(c.chunk_text, prefix, c.chunk_source))
       : chunks.map((c) => c.chunk_text);
-    if (opts.deferOnEmbedOutage && embedOutageBreakerOpen()) {
-      embeddingWaiting = true;
-    } else {
-      try {
-        const embeddings = await embedBatchWithBackoff(wrappedTexts, opts.embedRetry ?? {});
-        for (let i = 0; i < chunks.length; i++) {
-          chunks[i].embedding = embeddings[i];
-          // token_count tracks the wrapped string length so cost reporting
-          // reflects what we actually sent to the embedder.
-          chunks[i].token_count = Math.ceil(wrappedTexts[i].length / 4);
-        }
-        if (opts.deferOnEmbedOutage) noteEmbedHealthy();
-      } catch (error) {
-        // C-19: only an outage is admitted. A dimension mismatch, oversize
-        // payload or bad input still propagates (Codex C2 holds for those).
-        if (!opts.deferOnEmbedOutage || !isEmbedOutageError(error)) throw error;
-        noteEmbedOutage();
-        embeddingWaiting = true;
+    // An open breaker asks once, no retries: only the embedder's answer tells an
+    // outage from a dimension mismatch, oversize payload or bad input (throw).
+    const breaker = opts.deferOnEmbedOutage && embedOutageBreakerOpen();
+    const retry = breaker ? { ...opts.embedRetry, maxRetries: 0 } : (opts.embedRetry ?? {});
+    try {
+      const embeddings = await embedBatchWithBackoff(wrappedTexts, retry);
+      for (let i = 0; i < chunks.length; i++) {
+        chunks[i].embedding = embeddings[i];
+        // token_count tracks the wrapped string length so cost reporting
+        // reflects what we actually sent to the embedder.
+        chunks[i].token_count = Math.ceil(wrappedTexts[i].length / 4);
       }
+      if (opts.deferOnEmbedOutage) noteEmbedHealthy();
+    } catch (error) {
+      // C-19: only an outage is admitted. A dimension mismatch, oversize
+      // payload or bad input still propagates (Codex C2 holds for those).
+      if (!opts.deferOnEmbedOutage || !isEmbedOutageError(error)) throw error;
+      noteEmbedOutage();
+      embeddingWaiting = true;
     }
   }
 

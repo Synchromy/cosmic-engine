@@ -45,9 +45,10 @@ export function isEmbedOutageError(error: unknown): boolean {
 
 /**
  * In-process breaker: once a write has met an outage, the next writes in the
- * following minute skip the embed attempt and go straight to waiting, so a
- * burst of writes does not each spend the retry budget. A successful embed
- * closes it.
+ * following minute make one embed attempt with no retries, so a burst of
+ * writes does not each spend the retry budget. They still make that one
+ * attempt: only the embedder's answer tells an outage from bad input, which
+ * must throw. A successful embed closes it.
  */
 const BREAKER_MS = 60_000;
 let _openUntil = 0;
