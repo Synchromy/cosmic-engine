@@ -9,6 +9,7 @@
 
 import type { BrainEngine } from '../engine.ts';
 import { clampSearchLimit } from '../engine.ts';
+import { assertNoRestrictedTwin } from '../restricted-write-guard.ts';
 import type { Page, PageType } from '../types.ts';
 import { importFromContent } from '../import-file.ts';
 import { serializePageToMarkdown } from '../markdown.ts';
@@ -389,6 +390,9 @@ const put_page: Operation = {
     if (ctx.viaSubagent === true && ctx.auth) await requireWritablePage(ctx, slug.toLowerCase(), 'put_page', 'page', true);
 
     if (ctx.dryRun) return { dry_run: true, action: 'put_page', slug: p.slug };
+    // Cosmic C-72: no visible twin of a restricted page (after the dry-run
+    // return, which touches no engine).
+    await assertNoRestrictedTwin(ctx, slug, ctx.sourceId ?? 'default', 'put_page');
 
     // Empty-overwrite guard: empty/whitespace-only content over an existing
     // non-empty page is almost always an input-plumbing failure (e.g. a
