@@ -172,4 +172,19 @@ describe('restricted-no-derive: meetings, entities and the cycle', () => {
     expect(byPhase.consolidate).toBe('restricted_source');
     expect(byPhase.extract).not.toBe('restricted_source');
   });
+
+  test('a global cycle: the phases that loop every source themselves leave restricted out, and still visit the visible ones', async () => {
+    await engine.setConfig('cycle.conversation_facts_backfill.enabled', 'true');
+    await engine.setConfig('cycle.enrich_thin.enabled', 'true');
+    const { runCycle } = await import('../src/core/cycle.ts');
+    const report = await runCycle(engine, {
+      brainDir: null, dryRun: true,
+      phases: ['conversation_facts_backfill', 'enrich_thin'],
+    } as Parameters<typeof runCycle>[1]);
+    for (const name of ['conversation_facts_backfill', 'enrich_thin']) {
+      const visited = Object.keys((report.phases.find(p => p.phase === name)?.details?.per_source ?? {}) as object);
+      expect(visited).toContain('shared');
+      expect(visited).not.toContain('restricted');
+    }
+  });
 });
