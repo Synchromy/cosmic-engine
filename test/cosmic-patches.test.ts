@@ -54,6 +54,10 @@ const PROBES: Record<string, () => void> = {
     expect(readFileSync('src/core/ops/pages.ts', 'utf8')).toContain('deferOnEmbedOutage: !noEmbed');
     expect(readFileSync('src/commands/embed.ts', 'utf8')).toContain("args.includes('--waiting')");
   },
+  'restricted-write-guard': () => {
+    expect(existsSync('src/core/restricted-write-guard.ts')).toBe(true);
+    expect(readFileSync('src/core/ops/pages.ts', 'utf8')).toContain('assertNoRestrictedTwin(');
+  },
   'cosmic-brand': () => {
     // Every anchor applied; test/cosmic-brand.test.ts is the leak test proper.
     const r = brandCheck('.', true);
