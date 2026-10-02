@@ -223,6 +223,24 @@
       ]
     },
     {
+      "id": "move-source",
+      "branch": "upstream/move-source",
+      "what": "`gbrain pages move-source <slug> <to> [--from <source>]` moves one page between engine sources in one transaction, keeping its id (chunks, versions, links, raw data and timeline follow it) and re-keying its page-local source rows; refused onto any row already at the destination slug; a schema walk fails on a source_id table it does not decide about",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-02",
+        "note": "carried patch, not offered upstream: the restricted source is Cosmic's member-level model (C-72)"
+      },
+      "since": "2026-10-02",
+      "depends_on": [],
+      "hub_uses": "clearing a restriction on a company Cosmic moves the page back to its visible source (C-72, add-restricted-content, finding 6)",
+      "tests": [
+        "test/move-source.test.ts"
+      ]
+    },
+    {
       "id": "cosmic-brand",
       "script": "scripts/cosmic-brand.ts",
       "what": "Cosmic's name on what the engine tells a connected agent and the public: handshake, tool descriptions, hints, server and resource names, new credential prefixes (cosmic_). Inert unless COSMIC_BRAND is set",
