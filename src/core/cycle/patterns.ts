@@ -42,6 +42,7 @@ import { loadAllowedSlugPrefixes, loadOutputRoot, runSubagentsInline } from './s
 import { probeChatModel } from '../ai/gateway.ts';
 import { normalizeModelId } from '../model-id.ts';
 import { throwIfAborted } from '../abort-check.ts';
+import { RESTRICTED_SOURCE_ID } from '../restricted-no-derive.ts';
 
 export interface PatternsPhaseOpts {
   brainDir: string;
@@ -487,9 +488,10 @@ async function gatherReflections(
        FROM pages
       WHERE slug LIKE $2
         AND updated_at >= $1::timestamptz
+        AND source_id <> $3
       ORDER BY updated_at DESC
       LIMIT 100`,
-    [since, `${sourceSlugPrefix}/%`],
+    [since, `${sourceSlugPrefix}/%`, RESTRICTED_SOURCE_ID],
   );
   return rows.map(r => ({
     slug: r.slug,
