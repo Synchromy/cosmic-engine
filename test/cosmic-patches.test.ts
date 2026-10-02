@@ -58,6 +58,11 @@ const PROBES: Record<string, () => void> = {
     expect(existsSync('src/core/restricted-write-guard.ts')).toBe(true);
     expect(readFileSync('src/core/ops/pages.ts', 'utf8')).toContain('assertNoRestrictedTwin(');
   },
+  'link-sources-both-endpoints': () => {
+    for (const f of ['src/core/pglite-engine.ts', 'src/core/postgres-engine.ts']) {
+      expect(readFileSync(f, 'utf8')).toContain('cosmic patch link-sources-both-endpoints');
+    }
+  },
   'cosmic-brand': () => {
     // Every anchor applied; test/cosmic-brand.test.ts is the leak test proper.
     const r = brandCheck('.', true);
