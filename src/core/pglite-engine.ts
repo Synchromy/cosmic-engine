@@ -4065,19 +4065,16 @@ export class PGLiteEngine implements BrainEngine {
     opts?: { sourceId?: string; sourceIds?: string[] },
   ): Promise<{ link_source: string | null; count: number }[]> {
     // v114 (#1941): distinct provenances + counts for `gbrain link-sources`.
-    // Scoped: BOTH endpoints must be in scope, or an edge into a source the
-    // caller cannot read is counted (cosmic patch link-sources-both-endpoints).
+    // Scoped: BOTH endpoints in scope (cosmic patch link-sources-both-endpoints).
     // Federated {sourceIds} takes precedence over scalar {sourceId}; neither = unscoped.
     const params: unknown[] = [];
     let where = '';
     if (opts?.sourceIds && opts.sourceIds.length > 0) {
       params.push(opts.sourceIds);
-      where = `JOIN pages f ON f.id = l.from_page_id JOIN pages t ON t.id = l.to_page_id
-       WHERE f.source_id = ANY($${params.length}::text[]) AND t.source_id = ANY($${params.length}::text[])`;
+      where = `JOIN pages f ON f.id = l.from_page_id JOIN pages t ON t.id = l.to_page_id WHERE f.source_id = ANY($1::text[]) AND t.source_id = ANY($1::text[])`;
     } else if (opts?.sourceId) {
       params.push(opts.sourceId);
-      where = `JOIN pages f ON f.id = l.from_page_id JOIN pages t ON t.id = l.to_page_id
-       WHERE f.source_id = $${params.length} AND t.source_id = $${params.length}`;
+      where = `JOIN pages f ON f.id = l.from_page_id JOIN pages t ON t.id = l.to_page_id WHERE f.source_id = $1 AND t.source_id = $1`;
     }
     const { rows } = await this.db.query(
       `SELECT l.link_source, COUNT(*)::int AS count
