@@ -243,7 +243,7 @@
     {
       "id": "restricted-no-derive",
       "branch": "upstream/restricted-no-derive",
-      "what": "what the engine derives takes no input from the `restricted` source: the facts and chronicle backstops and their workers, extract_entities, the meeting timeline fan-out, the patterns phase's reflections, and a cycle run for restricted skip it; a restricted page keeps its own links, timeline and embedding",
+      "what": "what the engine derives takes no input from the `restricted` source: the facts and chronicle backstops and their workers, extract_entities, the meeting timeline fan-out, the patterns phase's reflections, the per-source loops of conversation_facts_backfill and enrich_thin, and a cycle run for restricted skip it; a restricted page keeps its own links, timeline and embedding",
       "state": "permanent",
       "upstream": {
         "pr": null,
