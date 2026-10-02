@@ -1,6 +1,6 @@
 /**
  * C-72 finding 9 — what Cosmic derives takes no input from the `restricted`
- * source. Carried patch `restricted-no-derive` (cosmic/patches.json).
+ * source, nor from `founders`, which starts restricted (finding 10). Carried patch `restricted-no-derive` (cosmic/patches.json).
  *
  * Each restricted case has a visible control on the same path, so a case
  * cannot pass because the path never ran.
@@ -12,6 +12,7 @@ import { runFactsBackstop } from '../src/core/facts/backstop.ts';
 import { runChronicleBackstop } from '../src/core/chronicle/backstop.ts';
 import { extractTimelineFromMeetings } from '../src/core/extract-timeline-from-meetings.ts';
 import { operations, type OperationContext } from '../src/core/operations.ts';
+import { derivesFrom } from '../src/core/restricted-no-derive.ts';
 import { resetPgliteState } from './helpers/reset-pglite.ts';
 import { markShortLivedCliProcess, __resetShortLivedCliForTests } from '../src/core/facts/cli-process-mode.ts';
 
@@ -33,7 +34,7 @@ beforeEach(async () => {
   await resetPgliteState(engine);
   // The reset truncates config; MinionQueue reads the schema version from it.
   await engine.setConfig('version', schemaVersion);
-  await engine.executeRaw("INSERT INTO sources (id, name) VALUES ('restricted', 'restricted'), ('shared', 'shared')");
+  await engine.executeRaw("INSERT INTO sources (id, name) VALUES ('restricted', 'restricted'), ('founders', 'founders'), ('shared', 'shared')");
 });
 
 function localCtx(sourceId: string): OperationContext {
@@ -81,6 +82,16 @@ async function janeSnapshot() {
   return { body: page?.compiled_truth, timeline: page?.timeline, rows: timeline.length };
 }
 
+describe('restricted-no-derive: which sources derive', () => {
+  test('restricted and founders do not; default, shared and an unscoped call do', () => {
+    expect(derivesFrom('restricted')).toBe(false);
+    expect(derivesFrom('founders')).toBe(false);
+    expect(derivesFrom('default')).toBe(true);
+    expect(derivesFrom('shared')).toBe(true);
+    expect(derivesFrom(undefined)).toBe(true);
+  });
+});
+
 describe('restricted-no-derive: a restricted email about a person adds nothing to people/<name>', () => {
   test('the scenario: a local put_page in restricted queues no derivation and leaves people/jane as it was', async () => {
     await engine.putPage('people/jane', { type: 'person', title: 'Jane Doe', compiled_truth: 'Jane Doe, engineer.', timeline: '', frontmatter: {} });
@@ -111,6 +122,14 @@ describe('restricted-no-derive: the backstops and their workers', () => {
     expect(await runFactsBackstop(emailPage, { engine, sourceId: 'restricted', source: 'mcp:put_page', sessionId: null, mode: 'inline' }))
       .toMatchObject({ inserted: 0, skipped: 'restricted_source' });
     expect(await runChronicleBackstop(emailPage, { engine, sourceId: 'restricted' }))
+      .toEqual({ enqueued: false, skipped: 'restricted_source' });
+    expect(await jobCount('facts-absorb')).toBe(0);
+  });
+
+  test('the facts and chronicle backstops refuse founders the same way', async () => {
+    expect(await runFactsBackstop(emailPage, { engine, sourceId: 'founders', source: 'mcp:put_page', sessionId: null }))
+      .toMatchObject({ enqueued: false, skipped: 'restricted_source' });
+    expect(await runChronicleBackstop(emailPage, { engine, sourceId: 'founders' }))
       .toEqual({ enqueued: false, skipped: 'restricted_source' });
     expect(await jobCount('facts-absorb')).toBe(0);
   });
@@ -146,6 +165,10 @@ describe('restricted-no-derive: meetings, entities and the cycle', () => {
 
   test('a restricted meeting adds no timeline line to a visible person, even with cross_source on', async () => {
     expect(await meetingIn('restricted')).toBe(0);
+  });
+
+  test('a founders meeting adds no timeline line either: founders starts restricted (finding 10)', async () => {
+    expect(await meetingIn('founders')).toBe(0);
   });
 
   test('control: the same meeting in a visible source does add the line', async () => {
@@ -185,6 +208,7 @@ describe('restricted-no-derive: meetings, entities and the cycle', () => {
       const visited = Object.keys((report.phases.find(p => p.phase === name)?.details?.per_source ?? {}) as object);
       expect(visited).toContain('shared');
       expect(visited).not.toContain('restricted');
+      expect(visited).not.toContain('founders');
     }
   });
 });
