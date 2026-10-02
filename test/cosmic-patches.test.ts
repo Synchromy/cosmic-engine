@@ -58,6 +58,10 @@ const PROBES: Record<string, () => void> = {
     expect(existsSync('src/core/restricted-write-guard.ts')).toBe(true);
     expect(readFileSync('src/core/ops/pages.ts', 'utf8')).toContain('assertNoRestrictedTwin(');
   },
+  'move-source': () => {
+    expect(existsSync('src/core/move-source.ts')).toBe(true);
+    expect(readFileSync('src/commands/pages.ts', 'utf8')).toContain("'move-source'");
+  },
   'link-sources-both-endpoints': () => {
     for (const f of ['src/core/pglite-engine.ts', 'src/core/postgres-engine.ts']) {
       expect(readFileSync(f, 'utf8')).toContain('cosmic patch link-sources-both-endpoints');
