@@ -34,6 +34,7 @@ import type { PageType } from '../types.ts';
 import { BudgetExhausted } from '../budget/budget-tracker.ts';
 import { isAvailable } from '../ai/gateway.ts';
 import { listSources } from '../sources-ops.ts';
+import { derivesFrom } from '../restricted-no-derive.ts';
 import {
   runEnrichCore,
   DEFAULT_TYPES,
@@ -189,7 +190,8 @@ export async function runPhaseEnrichThin(
   }
 
   const maxTotalWalltimeMs = cfg.maxTotalWalltimeMin * 60_000;
-  const sources = await listSources(engine);
+  // Cosmic C-72: enriched people and company pages are shared; never read restricted.
+  const sources = (await listSources(engine)).filter((s) => derivesFrom(s.id));
   if (sources.length === 0) {
     return {
       phase: 'enrich_thin',
