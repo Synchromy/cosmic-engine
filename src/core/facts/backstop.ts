@@ -456,6 +456,11 @@ export async function runFactsPipeline(
   /** Set when the LLM extraction step failed non-transport-fatally (see runPipelineWithBody). */
   skipped_reason?: import('./extract.ts').ExtractFailureReason;
 }> {
+  // C-72: every raw-turn entry (extract_facts, sweep, checkpoint harvest,
+  // context engine) derives nothing from a member-hidden source.
+  if (!derivesFrom(ctx.sourceId)) {
+    return { inserted: 0, duplicate: 0, superseded: 0, fact_ids: [], entity_slugs: [] };
+  }
   return runPipelineWithBody({
     turnText,
     isDreamGenerated: false,
