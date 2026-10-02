@@ -8,7 +8,7 @@
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { PGLiteEngine } from '../src/core/pglite-engine.ts';
-import { runFactsBackstop } from '../src/core/facts/backstop.ts';
+import { runFactsBackstop, runFactsPipeline } from '../src/core/facts/backstop.ts';
 import { runChronicleBackstop } from '../src/core/chronicle/backstop.ts';
 import { extractTimelineFromMeetings } from '../src/core/extract-timeline-from-meetings.ts';
 import { operations, type OperationContext } from '../src/core/operations.ts';
@@ -50,6 +50,7 @@ function localCtx(sourceId: string): OperationContext {
 
 const putPage = operations.find(o => o.name === 'put_page')!;
 const extractEntities = operations.find(o => o.name === 'extract_entities')!;
+const extractFacts = operations.find(o => o.name === 'extract_facts')!;
 
 const EMAIL = [
   '---',
@@ -137,6 +138,30 @@ describe('restricted-no-derive: the backstops and their workers', () => {
   test('control: the facts backstop queues the same page in a visible source', async () => {
     expect(await runFactsBackstop(emailPage, { engine, sourceId: 'shared', source: 'mcp:put_page', sessionId: null }))
       .toMatchObject({ enqueued: true });
+  });
+
+  test('extract_facts in restricted or founders derives nothing and says why', async () => {
+    for (const sourceId of ['restricted', 'founders']) {
+      expect(await extractFacts.handler(localCtx(sourceId), { turn_text: emailPage.compiled_truth }))
+        .toMatchObject({ inserted: 0, skipped: 'restricted_source' });
+    }
+    expect(await factCount()).toBe(0);
+  });
+
+  test('control: extract_facts in a visible source goes on to extraction', async () => {
+    // No chat model in tests, so reaching extraction shows as extraction_unavailable.
+    expect(await extractFacts.handler(localCtx('shared'), { turn_text: emailPage.compiled_truth }))
+      .toMatchObject({ skipped: 'extraction_unavailable' });
+  });
+
+  test('runFactsPipeline, the raw-turn entry sweep and checkpoint harvest share, derives nothing from restricted or founders', async () => {
+    for (const sourceId of ['restricted', 'founders']) {
+      expect(await runFactsPipeline(emailPage.compiled_truth, { engine, sourceId, source: 'mcp:extract_facts', sessionId: null }))
+        .toEqual({ inserted: 0, duplicate: 0, superseded: 0, fact_ids: [], entity_slugs: [] });
+    }
+    // Control: the same turn in a visible source reaches the extractor.
+    expect(await runFactsPipeline(emailPage.compiled_truth, { engine, sourceId: 'shared', source: 'mcp:extract_facts', sessionId: null }))
+      .toMatchObject({ skipped_reason: 'chat_unavailable' });
   });
 
   test('a facts-absorb or chronicle_extract job already queued for restricted does not run', async () => {

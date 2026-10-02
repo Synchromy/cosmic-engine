@@ -27,6 +27,7 @@ import { isAvailable } from '../ai/gateway.ts';
 import { ENTITY_HINTS_CAP } from '../facts/extract.ts';
 import { parseTtlShorthand } from '../facts/ttl-parse.ts';
 import { MEMORY_VERBS_VERSION } from '../verbs.ts';
+import { derivesFrom, RESTRICTED_SOURCE_REASON } from '../restricted-no-derive.ts';
 import type { SearchResult } from '../types.ts';
 import { AUDIT_ROW_SOURCES } from '../facts/audit-sources.ts';
 
@@ -80,6 +81,10 @@ const extract_facts: Operation = {
     }
 
     const sourceId = ctx.sourceId ?? 'default';
+    // C-72: nothing shared is derived from a member-hidden source.
+    if (!derivesFrom(sourceId)) {
+      return { inserted: 0, duplicate: 0, superseded: 0, fact_ids: [], skipped: RESTRICTED_SOURCE_REASON, ...hintAccounting };
+    }
     // [ENG-8] Explicit caller value wins; UNSET resolves through the shared
     // facts.default_visibility helper (the old ternary coerced unset →
     // 'private' before any config default could run). Garbage stays 'private'.
