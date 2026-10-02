@@ -187,6 +187,24 @@
       ]
     },
     {
+      "id": "restricted-write-guard",
+      "branch": "upstream/restricted-write-guard",
+      "what": "a remote put_page/capture whose target source is not restricted, onto a slug that exists in restricted, is refused naming the restricted page; local writes and remote writes to a slug shared by visible sources are untouched",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-02",
+        "note": "carried patch, not offered upstream: the restricted source is Cosmic's member-level model (C-72)"
+      },
+      "since": "2026-10-02",
+      "depends_on": [],
+      "hub_uses": "every admin agent's /mcp put_page on a company Cosmic (C-72, add-restricted-content, finding 6)",
+      "tests": [
+        "test/restricted-write-guard.test.ts"
+      ]
+    },
+    {
       "id": "cosmic-brand",
       "script": "scripts/cosmic-brand.ts",
       "what": "Cosmic's name on what the engine tells a connected agent and the public: handshake, tool descriptions, hints, server and resource names, new credential prefixes (cosmic_). Inert unless COSMIC_BRAND is set",
@@ -233,6 +251,10 @@
     {
       "path": "test/effective-date-contract.test.ts",
       "why": "the frontmatter date keys are a contract (cosmic-engine #12)"
+    },
+    {
+      "path": "test/raw-data-source-pair.test.ts",
+      "why": "raw data resolves by (source_id, slug) and never falls back to another source's page: a contract the restricted source relies on (C-72, finding 3)"
     },
     {
       "path": "src/cosmic/brand.ts",
