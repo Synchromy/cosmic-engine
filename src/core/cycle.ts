@@ -51,6 +51,7 @@ import { createProgress, type ProgressReporter } from './progress.ts';
 import { getCliOptions, cliOptsToProgressOptions } from './cli-options.ts';
 import { tryAcquireDbLock, reapDeadHolderLocks, LockStolenError, type DbLockHandle } from './db-lock.ts';
 import { assertValidSourceId } from './source-id.ts';
+import { derivesFrom, RESTRICTED_SOURCE_REASON } from './restricted-no-derive.ts';
 import { PHASE_SCOPE, SOURCE_FRESHNESS_PHASES, type PhaseScope } from './cycle/phase-scope.ts';
 
 export { PHASE_SCOPE, SOURCE_FRESHNESS_PHASES, type PhaseScope } from './cycle/phase-scope.ts';
@@ -1873,7 +1874,20 @@ export async function runCycle(
 ): Promise<CycleReport> {
   const start = performance.now();
   const requestedPhases = opts.phases ?? ALL_PHASES;
-  const phases = resolveCyclePhases(opts.phases, opts.sourceId, opts.fullImplicitSourceCycle);
+  const resolvedPhases = resolveCyclePhases(opts.phases, opts.sourceId, opts.fullImplicitSourceCycle);
+  // These phases use page content to create shared facts, pages or takes. A
+  // restricted source still runs page-local work (its own links and timeline
+  // via `extract`, its own weight, embedding), but never feeds these.
+  const restrictedDerivationPhases = new Set<CyclePhase>([
+    'synthesize', 'extract_facts', 'extract_atoms', 'patterns',
+    'synthesize_concepts', 'consolidate',
+    'propose_takes', 'grade_takes', 'calibration_profile', 'drift',
+    'conversation_facts_backfill', 'enrich_thin',
+  ]);
+  const restrictedSource = !derivesFrom(opts.sourceId);
+  const phases = restrictedSource
+    ? resolvedPhases.filter((phase) => !restrictedDerivationPhases.has(phase))
+    : resolvedPhases;
   const excludedPhases = requestedPhases.filter((phase) => !phases.includes(phase));
   const dryRun = !!opts.dryRun;
   const pull = !!opts.pull;
@@ -1882,9 +1896,13 @@ export async function runCycle(
     phase,
     status: 'skipped',
     duration_ms: 0,
-    summary: `excluded from implicit non-default source cycle (${PHASE_SCOPE[phase]} scope)`,
+    summary: restrictedSource && restrictedDerivationPhases.has(phase)
+      ? 'restricted source is excluded from shared derivations'
+      : `excluded from implicit non-default source cycle (${PHASE_SCOPE[phase]} scope)`,
     details: {
-      reason: 'excluded_from_implicit_source_cycle',
+      reason: restrictedSource && restrictedDerivationPhases.has(phase)
+        ? RESTRICTED_SOURCE_REASON
+        : 'excluded_from_implicit_source_cycle',
       source_id: opts.sourceId,
       phase_scope: PHASE_SCOPE[phase],
     },
