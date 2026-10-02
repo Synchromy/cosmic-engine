@@ -142,10 +142,10 @@ function ctx(engine: PGLiteEngine, admin = false): OperationContext {
     engine: engine as any, config: { engine: 'pglite' } as any,
     logger: { info() {}, warn() {}, error() {}, debug() {} } as any,
     dryRun: false, remote: true, transport: 'stdio', sourceId: 'default',
-    auth: { clientId: 'gbrain_cl_c72', clientName: 'c72', scopes: [], allowedSources: admin ? ['default', 'shared', 'restricted', 'founders'] : ['default', 'shared'] },
+    auth: { clientId: 'gbrain_cl_c72', clientName: 'c72', scopes: [], allowedSources: admin ? ['default', 'shared', 'restricted', 'founders'] : ['default', 'shared'] } as any,
   } as OperationContext;
 }
-function local(engine: PGLiteEngine, sourceId?: string): OperationContext { return { ...ctx(engine, true), remote: false, auth: undefined, sourceId }; }
+function local(engine: PGLiteEngine, sourceId?: string): OperationContext { return { ...ctx(engine, true), remote: false, auth: undefined, sourceId } as OperationContext; }
 function leaked(value: unknown): string | null { const text = JSON.stringify(value) ?? ''; return LEAK_TOKENS.find(t => text.includes(t)) ?? null; }
 function normalise(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(normalise).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
