@@ -205,6 +205,24 @@
       ]
     },
     {
+      "id": "link-sources-both-endpoints",
+      "branch": "upstream/link-sources-both-endpoints",
+      "what": "a scoped list_link_sources counts an edge only when both its endpoints are in the caller's scope, so a member-level client's counts carry no edge into restricted; unscoped local callers are unchanged",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-02",
+        "note": "never offered upstream: a cross-source count in upstream's own scoping, found by the C-72 member read sweep; offering it is a person's call"
+      },
+      "since": "2026-10-02",
+      "depends_on": [],
+      "hub_uses": "every member-level client's list_link_sources on a company Cosmic (C-72, add-restricted-content, finding 8)",
+      "tests": [
+        "test/link-sources-both-endpoints.test.ts"
+      ]
+    },
+    {
       "id": "cosmic-brand",
       "script": "scripts/cosmic-brand.ts",
       "what": "Cosmic's name on what the engine tells a connected agent and the public: handshake, tool descriptions, hints, server and resource names, new credential prefixes (cosmic_). Inert unless COSMIC_BRAND is set",
@@ -255,6 +273,10 @@
     {
       "path": "test/raw-data-source-pair.test.ts",
       "why": "raw data resolves by (source_id, slug) and never falls back to another source's page: a contract the restricted source relies on (C-72, finding 3)"
+    },
+    {
+      "path": "test/member-read-sweep.test.ts",
+      "why": "every read op, as a member-level client, shows nothing from restricted or founders in any answer or count: the sweep the restricted source relies on (C-72, finding 8)"
     },
     {
       "path": "src/cosmic/brand.ts",
