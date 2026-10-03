@@ -241,6 +241,24 @@
       ]
     },
     {
+      "id": "restricted-advisor",
+      "branch": "upstream/restricted-advisor",
+      "what": "the advisor reports on the whole brain, so a remote caller whose read grant does not cover every source is refused it (permission_denied, naming no source); trusted local callers and grants covering every source are unchanged",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-03",
+        "note": "carried patch, not offered upstream: the restricted source is Cosmic's member-level model (C-72)"
+      },
+      "since": "2026-10-03",
+      "depends_on": [],
+      "hub_uses": "every member-level client's advisor call on a company Cosmic (C-72, add-restricted-content, finding 8)",
+      "tests": [
+        "test/restricted-advisor.test.ts"
+      ]
+    },
+    {
       "id": "restricted-no-derive",
       "branch": "upstream/restricted-no-derive",
       "what": "what the engine derives takes no input from the `restricted` source, nor from `founders`, which starts restricted (C-72 finding 10): the facts and chronicle backstops and their workers, extract_facts and the raw-turn facts pipeline (runFactsPipeline), extract_entities, the meeting timeline fan-out, the patterns phase's reflections, the per-source loops of conversation_facts_backfill and enrich_thin, and a cycle run for restricted skip it; a restricted page keeps its own links, timeline and embedding",

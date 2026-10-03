@@ -28,6 +28,13 @@ import { OperationError } from '../src/core/ops/contract.ts';
 import { readOps } from './helpers/ops-registry.ts';
 import { linkEntityIdentity } from '../src/core/entity-identity.ts';
 import { SAFE_FENCE_CHUNKER_VERSION } from '../src/core/search/safe-chunks.ts';
+import { upsertOpenLoop } from '../src/core/loops/loops-store.ts';
+import { __setChatTransportForTests, __setEmbedTransportForTests, configureGateway, resetGateway } from '../src/core/ai/gateway.ts';
+import { withEnv } from './helpers/with-env.ts';
+import { runInitBrainPack } from '../src/core/skillpack/init-brain-pack.ts';
+import { mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 const RESTRICTED = 'C72RESTRICTEDTOKEN';
 const FOUNDERS = 'C72FOUNDERSTOKEN';
@@ -35,7 +42,8 @@ const RESTRICTED_SLUG = 'notes/c72-restricted-memo';
 const VISIBLE_SLUG = 'notes/c72-visible-memo';
 const PERSON = 'people/c72-visible-person';
 const TWIN = 'people/shared-twin';
-const LEAK_TOKENS = [RESTRICTED, FOUNDERS, RESTRICTED.toLowerCase(), FOUNDERS.toLowerCase(), RESTRICTED_SLUG, 'notes/c72-founders-memo', 'restricted', 'founders'];
+const PACK_SKILL = `${RESTRICTED.toLowerCase()}-skill`;
+const LEAK_TOKENS =[RESTRICTED, FOUNDERS, RESTRICTED.toLowerCase(), FOUNDERS.toLowerCase(), RESTRICTED_SLUG, 'notes/c72-founders-memo', 'restricted', 'founders'];
 // One instant for every date, and the matrix's leap-day-safe anniversary: a
 // prior-year date 365 days back, moved off Feb 29 so its month-day exists in
 // every year, and an explicit on_this_day anchor with that month-day.
@@ -51,28 +59,69 @@ const ON_THIS_DAY_ANCHOR = SAME_MMDD_THIS_YEAR > LAST_YEAR
   ? SAME_MMDD_THIS_YEAR
   : `${Number(TODAY.slice(0, 4)) + 1}-${LAST_YEAR.slice(5)}`;
 
-type Swept = { name: string; mode: 'swept'; args: Record<string, unknown>; control?: (r: unknown) => boolean; expectMember?: (r: unknown) => void; localControl?: string };
-type Brainwide = { name: string; mode: 'brainwide'; args: Record<string, unknown>; rationale: string; differential?: 'source-enumeration' };
+type Around = <T>(fn: () => Promise<T>) => Promise<T>;
+type Swept = { name: string; mode: 'swept'; args: Record<string, unknown>; control?: (r: unknown) => boolean; expectMember?: (r: unknown) => void; localControl?: string; around?: Around };
+type Brainwide = { name: string; mode: 'brainwide'; args: Record<string, unknown>; rationale: string; differential?: 'source-enumeration'; around?: Around };
+// Every remote caller is refused, the admin as well as the member, so no
+// control can see private data remotely. The row pins the refusal for both.
+type Denied = { name: string; mode: 'denied'; args: Record<string, unknown>; reason: string };
+type Withheld = { name: string; mode: 'withheld'; args: Record<string, unknown>; reason: string };
 type Skip = { name: string; mode: 'skip'; reason: string };
-type Row = Swept | Brainwide | Skip;
+type Row = Swept | Brainwide | Denied | Withheld | Skip;
+
+// No LLM and no embedder, without the network: a fake key gets past the
+// keyless check, then the chat call fails, so think and synthesize answer
+// with their extractive digest of what the caller's gather found.
+const llmFails: Around = async fn => {
+  __setChatTransportForTests(async () => { throw new Error('c72 sweep: no LLM'); });
+  __setEmbedTransportForTests(async () => { throw new Error('c72 sweep: no embedder'); });
+  try { return await withEnv({ ANTHROPIC_API_KEY: 'sk-test-hermetic' }, fn); }
+  finally { __setChatTransportForTests(null); __setEmbedTransportForTests(null); }
+};
+// A 1x1 PNG, and a multimodal embedder answered by a stubbed fetch, as
+// search-by-image-op.test.ts does: every image chunk scores the same.
+const PNG_BYTES = Buffer.from([
+  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+  0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0,
+  31, 21, 196, 137, 0, 0, 0, 12, 73, 68, 65, 84, 8, 87, 99, 248, 207, 192, 0, 0, 0, 3, 0, 1,
+  90, 12, 105, 240, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+]);
+const imageEmbedder: Around = async fn => {
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    data: [{ embedding: Array.from({ length: 1024 }, () => 0.1), index: 0 }], model: 'voyage-multimodal-3',
+  }), { status: 200 })) as unknown as typeof fetch;
+  configureGateway({
+    embedding_model: 'openai:text-embedding-3-large', embedding_dimensions: 1536,
+    embedding_multimodal_model: 'voyage:voyage-multimodal-3', env: { OPENAI_API_KEY: 'test', VOYAGE_API_KEY: 'test' },
+  });
+  try { return await fn(); }
+  finally { globalThis.fetch = origFetch; resetGateway(); }
+};
+// think echoes the question, so the token in it is not a leak.
+const withoutQuestion = (r: unknown): unknown => ({ ...(r as Record<string, unknown>), question: '' });
 
 // Keep the same dispositions as operations-source-isolation-matrix: this is a
 // second ratchet over that identical public read surface, not a hand-picked list.
 const MATRIX: Row[] = [
-  { name: 'entity', mode: 'skip', reason: 'MEMORY_VERBS conformance suite owns it; LLM-shaped output' },
-  { name: 'synthesize', mode: 'skip', reason: 'LLM-dependent; verbs conformance owns the error path' },
-  { name: 'think', mode: 'skip', reason: 'LLM-dependent; think-source-isolation-pglite e2e owns its scoping' },
-  { name: 'search_by_image', mode: 'skip', reason: 'needs image-embedding infra; cross-modal suites own it' },
-  { name: 'volunteer_context', mode: 'skip', reason: 'session/reflex machinery; volunteer-context suites own scoping' },
-  { name: 'context_pack', mode: 'skip', reason: 'verbs conformance owns it; budget-packed composite of scoped reads' },
-  { name: 'delta', mode: 'skip', reason: 'session-cursor verb; conformance suite owns it' },
-  { name: 'find_trajectory', mode: 'skip', reason: 'typed-claim/event extraction pipeline; eval-trajectory + facts suites own it' },
-  { name: 'ontology_conflicts', mode: 'skip', reason: 'ontology merge pipeline fixture; D7 ontology-merge parity suite owns conflicts' },
-  { name: 'get_skill', mode: 'skip', reason: 'skills catalog + brain-resident packs; skill-catalog confinement suites own it' },
-  { name: 'list_brain_skillpack', mode: 'skip', reason: 'brain-resident skillpack surface; skillpack suites own it' },
-  { name: 'advisor', mode: 'skip', reason: 'aggregate advisory over full stack; advisor suites own it' },
-  { name: 'open_loops', mode: 'skip', reason: 'Gmail detector pipeline; test/ops-loops.test.ts owns its remote posture' },
-  { name: 'list_skills', mode: 'skip', reason: 'bundled install-tree catalog; skills suites own it' },
+  { name: 'entity', mode: 'swept', args: { name: 'people/c72-restricted-person' }, localControl: 'entity reads the scalar ctx.sourceId rather than a federated remote grant' },
+  // A question visible pages answer too: with nothing gathered, synthesize
+  // refuses as unavailable, which would prove nothing about the member.
+  { name: 'synthesize', mode: 'swept', args: { question: 'C72 person truth' }, around: llmFails },
+  { name: 'think', mode: 'swept', args: { question: RESTRICTED }, around: llmFails, control: r => leaked(withoutQuestion(r)) !== null, expectMember: r => expect(leaked(withoutQuestion(r))).toBeNull() },
+  { name: 'search_by_image', mode: 'swept', args: { image_data: PNG_BYTES.toString('base64') }, around: imageEmbedder },
+  { name: 'volunteer_context', mode: 'swept', args: { window: 'user: Please brief me on C72 Restricted Person', min_confidence: 0 }, control: r => JSON.stringify(r).includes(RESTRICTED), localControl: 'volunteer_context applies scalar source scope before a remote grant' },
+  { name: 'context_pack', mode: 'swept', args: { entities: 'people/c72-restricted-person' }, localControl: 'context_pack reads the scalar ctx.sourceId rather than a federated remote grant', expectMember: r => expect((r as any).cards).toEqual([]) },
+  { name: 'delta', mode: 'swept', args: { since: new Date(NOW_MS - 7 * 86_400_000).toISOString() }, localControl: 'delta reads the scalar ctx.sourceId rather than a federated remote grant' },
+  { name: 'find_trajectory', mode: 'swept', args: { entity_slug: PERSON } },
+  { name: 'ontology_conflicts', mode: 'swept', args: {}, localControl: 'ontology conflicts uses the scalar ctx.sourceId for its private control' },
+  // The restricted source ships a brain-resident pack (seed()); the host
+  // catalog get_skill also serves without source_id is list_skills' row.
+  { name: 'get_skill', mode: 'swept', args: { name: PACK_SKILL, source_id: 'restricted' } },
+  { name: 'list_brain_skillpack', mode: 'swept', args: {} },
+  { name: 'advisor', mode: 'withheld', args: {}, reason: 'whole-brain diagnostics are withheld from partial member grants' },
+  { name: 'open_loops', mode: 'swept', args: { group_by: 'none' } },
+  { name: 'list_skills', mode: 'brainwide', args: {}, rationale: 'published host catalog is independent of source content' },
   { name: 'search_modes', mode: 'brainwide', args: {}, rationale: 'reports search config knobs, no page data' },
   { name: 'get_brain_identity', mode: 'brainwide', args: {}, rationale: 'brain-level identity document by design' },
   { name: 'whoami', mode: 'brainwide', args: {}, rationale: 'caller identity/transport echo, no page data' },
@@ -126,12 +175,12 @@ const MATRIX: Row[] = [
   { name: 'sources_status', mode: 'swept', args: { id: 'restricted' }, control: r => JSON.stringify(r).includes('restricted') },
   { name: 'schema_stats', mode: 'swept', args: {} },
   { name: 'schema_review_orphans', mode: 'swept', args: { limit: 50 } },
-  { name: 'code_callers', mode: 'skip', reason: 'scoping pinned in code-intel-mcp-ops e2e' },
-  { name: 'code_callees', mode: 'skip', reason: 'scoping pinned in code-intel-mcp-ops e2e' },
-  { name: 'code_def', mode: 'skip', reason: 'A13 code-intel-source-scope suite owns it' },
-  { name: 'code_refs', mode: 'skip', reason: 'A13 code-intel-source-scope suite owns it' },
-  { name: 'code_blast', mode: 'skip', reason: 'A13 suite owns it (resolveCodeIntelScope fence)' },
-  { name: 'code_flow', mode: 'skip', reason: 'A13 suite owns it (resolveCodeIntelScope fence)' },
+  { name: 'code_callers', mode: 'denied', args: { symbol: 'c72' }, reason: 'every remote code read is suspended (src/core/ops/code-intel.ts)' },
+  { name: 'code_callees', mode: 'denied', args: { symbol: 'c72' }, reason: 'every remote code read is suspended (src/core/ops/code-intel.ts)' },
+  { name: 'code_def', mode: 'denied', args: { symbol: 'c72' }, reason: 'every remote code read is suspended (src/core/ops/code-intel.ts)' },
+  { name: 'code_refs', mode: 'denied', args: { symbol: 'c72' }, reason: 'every remote code read is suspended (src/core/ops/code-intel.ts)' },
+  { name: 'code_blast', mode: 'denied', args: { symbol: 'c72' }, reason: 'every remote code read is suspended (src/core/ops/code-intel.ts)' },
+  { name: 'code_flow', mode: 'denied', args: { symbol: 'c72' }, reason: 'every remote code read is suspended (src/core/ops/code-intel.ts)' },
 ];
 
 let full: PGLiteEngine;
@@ -153,6 +202,8 @@ function normalise(value: unknown): unknown {
     .filter(([key]) => !(/(^id$|_id$|_at$|_ms$|duration|run_id|uuid|timestamp|score)/i.test(key)))
     .map(([key, entry]) => [key, normalise(entry)]));
   if (typeof value === 'string' && (/^\d{4}-\d\d-\d\dT/.test(value) || /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(value))) return '<volatile>';
+  // A timestamp inside prose (delta's and volunteer_context's lines).
+  if (typeof value === 'string') return value.replace(/\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+(?:Z|[+-]\d\d:\d\d)/g, '<volatile>');
   return value;
 }
 async function call(engine: PGLiteEngine, name: string, args: Record<string, unknown>, admin = false): Promise<unknown> {
@@ -169,6 +220,8 @@ async function sealChunks(engine: PGLiteEngine): Promise<void> {
 
 async function seed(engine: PGLiteEngine, includePrivate: boolean): Promise<void> {
   await engine.connect({}); await engine.initSchema();
+  await engine.setConfig('mcp.publish_skills', 'true');
+  await engine.setConfig('mcp.publish_advisor', 'true');
   for (const id of ['shared', ...(includePrivate ? ['restricted', 'founders'] : [])]) {
     await engine.executeRaw('INSERT INTO sources (id, name, local_path) VALUES ($1, $1, $2)', [id, `/tmp/${id}`]);
   }
@@ -184,7 +237,7 @@ async function seed(engine: PGLiteEngine, includePrivate: boolean): Promise<void
     const slug = sourceId === 'restricted' ? RESTRICTED_SLUG : 'notes/c72-founders-memo';
     const person = `people/c72-${sourceId}-person`;
     await engine.putPage(slug, { type: 'note', title: `${marker} title`, compiled_truth: `${marker} body ${marker.toLowerCase()}-topic`, timeline: `- ${TODAY}: ${marker} timeline`, frontmatter: { marker, raw: marker } }, { sourceId });
-    await engine.putPage(person, { type: 'person', title: `${marker} person`, compiled_truth: `${marker} person truth`, frontmatter: {} }, { sourceId });
+    await engine.putPage(person, { type: 'person', title: marker === RESTRICTED ? 'C72 Restricted Person' : `${marker} person`, compiled_truth: `${marker} person truth`, frontmatter: {} }, { sourceId });
     await engine.putPage(`misc/c72-${sourceId}-orphan`, { type: 'note', title: `${marker} orphan`, compiled_truth: `${marker} orphan`, frontmatter: {} }, { sourceId });
     await engine.executeRaw('UPDATE pages SET type = \'\' WHERE slug = $1 AND source_id = $2', [`misc/c72-${sourceId}-orphan`, sourceId]);
     await engine.putPage(`stubs/c72-${sourceId}-stub`, { type: 'person', title: `${marker} stub`, compiled_truth: `${marker} stub`, frontmatter: { provenance: 'auto-extracted', status: 'unverified' } }, { sourceId });
@@ -202,15 +255,39 @@ async function seed(engine: PGLiteEngine, includePrivate: boolean): Promise<void
     await engine.addTakesBatch([{ page_id: page!.id, row_num: 1, claim: `${marker} take`, kind: 'view', holder: 'world', weight: 0.8 }] as any); // remote reads serve holder 'world' only (readHolders)
   }
   await engine.putPage(TWIN, { type: 'person', title: `${RESTRICTED} twin`, compiled_truth: `${RESTRICTED} twin body`, frontmatter: { marker: RESTRICTED } }, { sourceId: 'restricted' });
+  // A typed claim on a visible entity is deliberate: trajectory must apply its
+  // source fence even when the entity itself is member-visible.
+  await engine.executeRaw(
+    `INSERT INTO facts (source_id, entity_slug, fact, kind, source, valid_from,
+                        claim_metric, claim_value, claim_unit, claim_period, visibility)
+     VALUES ('restricted', $1, $2, 'fact', 'c72-test', now(), 'c72_metric', 72, 'USD', 'monthly', 'world')`,
+    [PERSON, `${RESTRICTED} typed trajectory claim`],
+  );
+  // Backward-dated competing values remain concurrently active and therefore
+  // make ontology_conflicts' local control non-vacuous.
+  await engine.mergeOntologyFact({ entitySlug: PERSON, dimension: 'employer', value: `${RESTRICTED} first employer`, confidence: 0.9, source: 'c72-one', sourceId: 'restricted', validFrom: '2026-05-01T00:00:00.000Z' } as any);
+  await engine.mergeOntologyFact({ entitySlug: PERSON, dimension: 'company', value: `${RESTRICTED} second employer`, confidence: 0.9, source: 'c72-two', sourceId: 'restricted', validFrom: '2026-04-01T00:00:00.000Z' } as any);
+  await upsertOpenLoop(engine, {
+    sourceId: 'restricted', dedupKey: 'thread:c72-restricted', loopType: 'unanswered_inbound',
+    counterpartyEmail: 'c72restrictedtoken@example.test', summary: 'C72RESTRICTEDTOKEN follow-up',
+    evidence: [{ message_id: 'c72', quote: 'C72RESTRICTEDTOKEN' }], threadId: 'c72', detector: 'deterministic_thread',
+  });
   await engine.addLink(VISIBLE_SLUG, RESTRICTED_SLUG, RESTRICTED, 'mentions', 'markdown', undefined, undefined, { fromSourceId: 'default', toSourceId: 'restricted' });
   await engine.addLink(RESTRICTED_SLUG, PERSON, RESTRICTED, 'mentions', 'markdown', undefined, undefined, { fromSourceId: 'restricted', toSourceId: 'default' });
   await linkEntityIdentity(engine, { entityId: 'c72-person', slug: RESTRICTED_SLUG, sourceId: 'restricted' });
+  // search_by_image's arm reads embedding_image on image chunks.
+  await engine.putPage('media/c72-restricted-image', { type: 'image', title: `${RESTRICTED} image`, compiled_truth: `${RESTRICTED} image page`, frontmatter: {} }, { sourceId: 'restricted' });
+  await engine.upsertChunks('media/c72-restricted-image', [{ chunk_index: 0, chunk_text: `${RESTRICTED} photo.jpg`, chunk_source: 'image_asset', modality: 'image', embedding_image: new Float32Array(1024).fill(0.1), token_count: 2 }] as any, { sourceId: 'restricted' });
+  const packDir = join(packRoot, 'restricted-pack');
+  runInitBrainPack({ targetDir: packDir, name: `${RESTRICTED.toLowerCase()}-pack`, firstSkillSlug: PACK_SKILL, schemaPack: 'gbrain-base' });
+  await engine.executeRaw('UPDATE sources SET local_path = $1 WHERE id = $2', [packDir, 'restricted']);
   await sealChunks(engine);
   await (engine as any).writeContradictionsRun({ run_id: 'c72-run', judge_model: 'test', prompt_version: 'v1', queries_evaluated: 1, queries_with_contradiction: 1, total_contradictions_flagged: 1, wilson_ci_lower: 0, wilson_ci_upper: 1, judge_errors_total: 0, cost_usd_total: 0, duration_ms: 1, source_tier_breakdown: {}, report_json: { per_query: [{ contradictions: [{ kind: 'direct', severity: 'high', axis: RESTRICTED, confidence: 1, a: { slug: RESTRICTED_SLUG }, b: { slug: PERSON } }] }] } });
 }
 
-beforeAll(async () => { full = new PGLiteEngine(); visibleOnly = new PGLiteEngine(); await seed(full, true); await seed(visibleOnly, false); }, 120_000);
-afterAll(async () => { await full?.disconnect(); await visibleOnly?.disconnect(); }, 60_000);
+let packRoot: string;
+beforeAll(async () => { packRoot = mkdtempSync(join(tmpdir(), 'c72-sweep-')); full = new PGLiteEngine(); visibleOnly = new PGLiteEngine(); await seed(full, true); await seed(visibleOnly, false); }, 120_000);
+afterAll(async () => { await full?.disconnect(); await visibleOnly?.disconnect(); rmSync(packRoot, { recursive: true, force: true }); }, 60_000);
 
 describe('member read sweep coverage ratchet', () => {
   test('covers every non-localOnly read op exactly once', () => {
@@ -223,7 +300,25 @@ describe('member read sweep coverage ratchet', () => {
 describe('member-level grant read sweep', () => {
   for (const row of MATRIX) {
     if (row.mode === 'skip') { test(`SKIP ${row.name} — ${row.reason}`, () => expect(row.reason.length).toBeGreaterThan(10)); continue; }
-    test(`${row.mode.toUpperCase()} ${row.name}`, async () => {
+    if (row.mode === 'denied') {
+      test(`DENIED ${row.name} — ${row.reason}`, async () => {
+        for (const admin of [false, true]) {
+          const refusal = await call(full, row.name, row.args, admin).then(() => null, (error: unknown) => error);
+          expect(refusal).toBeInstanceOf(OperationError);
+          expect((refusal as OperationError).code).toBe('permission_denied');
+        }
+      });
+      continue;
+    }
+    if (row.mode === 'withheld') {
+      test(`WITHHELD ${row.name} — ${row.reason}`, async () => {
+        const op = operations.find(candidate => candidate.name === row.name)!;
+        await expect(op.handler(ctx(full, true), row.args)).resolves.toBeObject();
+        await expect(op.handler(ctx(full), row.args)).rejects.toMatchObject({ code: 'permission_denied' });
+      });
+      continue;
+    }
+    test(`${row.mode.toUpperCase()} ${row.name}`, () => (row.around ?? (fn => fn()))(async () => {
       const op = operations.find(candidate => candidate.name === row.name)!;
       if (row.mode === 'swept') {
         const probe = row.control ?? ((result: unknown) => leaked(result) !== null);
@@ -254,7 +349,7 @@ describe('member-level grant read sweep', () => {
         const withoutPrivate = await call(visibleOnly, row.name, row.args);
         expect(normalise(withPrivate)).toEqual(normalise(withoutPrivate));
       }
-    });
+    }));
   }
 });
 
