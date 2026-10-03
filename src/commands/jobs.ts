@@ -27,6 +27,7 @@ import { loadConfig, isThinClient } from '../core/config.ts';
 import { callRemoteTool, unpackToolResult } from '../core/mcp-client.ts';
 import { parseNiceValue, applyNiceness, getEffectiveNiceness, formatNice } from '../core/minions/niceness.ts';
 import { defaultTimeoutMsFor, defaultLockDurationMsFor, clampLockDurationMs } from '../core/minions/handler-timeouts.ts';
+import { derivesFrom, RESTRICTED_SOURCE_REASON } from '../core/restricted-no-derive.ts';
 
 function parseFlag(args: string[], flag: string): string | undefined {
   const idx = args.indexOf(flag);
@@ -2349,6 +2350,7 @@ export async function registerBuiltinHandlers(
     const slug = typeof job.data.slug === 'string' ? job.data.slug : undefined;
     if (!slug) throw new Error('chronicle_extract job requires data.slug');
     const sourceId = typeof job.data.sourceId === 'string' ? job.data.sourceId : undefined;
+    if (!derivesFrom(sourceId)) return { skipped: RESTRICTED_SOURCE_REASON, slug, sourceId };
     const { runChronicleExtract } = await import('../core/chronicle/extract-events.ts');
     const { chronicleTz } = await import('../core/chronicle/config.ts');
     const tz = await chronicleTz(engine);
@@ -2526,6 +2528,7 @@ export async function registerBuiltinHandlers(
     const slug = typeof job.data.slug === 'string' ? job.data.slug : '';
     if (!slug) throw new Error('facts-absorb job requires data.slug');
     const sourceId = typeof job.data.sourceId === 'string' ? job.data.sourceId : 'default';
+    if (!derivesFrom(sourceId)) return { skipped: RESTRICTED_SOURCE_REASON, slug, sourceId };
     const page = await engine.getPage(slug, { sourceId });
     if (!page) return { skipped: 'page_missing', slug, sourceId };
     const { runFactsBackstop, coerceNotabilityFilter } = await import('../core/facts/backstop.ts');

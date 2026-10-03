@@ -71,6 +71,10 @@ const PROBES: Record<string, () => void> = {
       expect(readFileSync(f, 'utf8')).toContain('cosmic patch link-sources-both-endpoints');
     }
   },
+  'restricted-no-derive': () => {
+    expect(existsSync('src/core/restricted-no-derive.ts')).toBe(true);
+    expect(readFileSync('src/core/facts/backstop.ts', 'utf8')).toContain('derivesFrom(ctx.sourceId)');
+  },
   'cosmic-brand': () => {
     // Every anchor applied; test/cosmic-brand.test.ts is the leak test proper.
     const r = brandCheck('.', true);
