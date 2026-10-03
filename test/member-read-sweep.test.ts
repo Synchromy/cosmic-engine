@@ -65,8 +65,9 @@ type Brainwide = { name: string; mode: 'brainwide'; args: Record<string, unknown
 // Every remote caller is refused, the admin as well as the member, so no
 // control can see private data remotely. The row pins the refusal for both.
 type Denied = { name: string; mode: 'denied'; args: Record<string, unknown>; reason: string };
+type Withheld = { name: string; mode: 'withheld'; args: Record<string, unknown>; reason: string };
 type Skip = { name: string; mode: 'skip'; reason: string };
-type Row = Swept | Brainwide | Denied | Skip;
+type Row = Swept | Brainwide | Denied | Withheld | Skip;
 
 // No LLM and no embedder, without the network: a fake key gets past the
 // keyless check, then the chat call fails, so think and synthesize answer
@@ -118,7 +119,7 @@ const MATRIX: Row[] = [
   // catalog get_skill also serves without source_id is list_skills' row.
   { name: 'get_skill', mode: 'swept', args: { name: PACK_SKILL, source_id: 'restricted' } },
   { name: 'list_brain_skillpack', mode: 'swept', args: {} },
-  { name: 'advisor', mode: 'skip', reason: 'LEAK, filed: with mcp.publish_advisor on, a member sees counts that include restricted pages (9 unlinked pages, not 1; 3 missing embeddings, not 1) and a restricted ontology conflict on a visible person' },
+  { name: 'advisor', mode: 'withheld', args: {}, reason: 'whole-brain diagnostics are withheld from partial member grants' },
   { name: 'open_loops', mode: 'swept', args: { group_by: 'none' } },
   { name: 'list_skills', mode: 'brainwide', args: {}, rationale: 'published host catalog is independent of source content' },
   { name: 'search_modes', mode: 'brainwide', args: {}, rationale: 'reports search config knobs, no page data' },
@@ -306,6 +307,14 @@ describe('member-level grant read sweep', () => {
           expect(refusal).toBeInstanceOf(OperationError);
           expect((refusal as OperationError).code).toBe('permission_denied');
         }
+      });
+      continue;
+    }
+    if (row.mode === 'withheld') {
+      test(`WITHHELD ${row.name} — ${row.reason}`, async () => {
+        const op = operations.find(candidate => candidate.name === row.name)!;
+        await expect(op.handler(ctx(full, true), row.args)).resolves.toBeObject();
+        await expect(op.handler(ctx(full), row.args)).rejects.toMatchObject({ code: 'permission_denied' });
       });
       continue;
     }

@@ -241,6 +241,24 @@
       ]
     },
     {
+      "id": "restricted-advisor",
+      "branch": "upstream/restricted-advisor",
+      "what": "the advisor reports on the whole brain, so a remote caller whose read grant does not cover every source is refused it (permission_denied, naming no source); trusted local callers and grants covering every source are unchanged",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-03",
+        "note": "carried patch, not offered upstream: the restricted source is Cosmic's member-level model (C-72)"
+      },
+      "since": "2026-10-03",
+      "depends_on": [],
+      "hub_uses": "every member-level client's advisor call on a company Cosmic (C-72, add-restricted-content, finding 8)",
+      "tests": [
+        "test/restricted-advisor.test.ts"
+      ]
+    },
+    {
       "id": "cosmic-brand",
       "script": "scripts/cosmic-brand.ts",
       "what": "Cosmic's name on what the engine tells a connected agent and the public: handshake, tool descriptions, hints, server and resource names, new credential prefixes (cosmic_). Inert unless COSMIC_BRAND is set",

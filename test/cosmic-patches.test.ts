@@ -58,6 +58,10 @@ const PROBES: Record<string, () => void> = {
     expect(existsSync('src/core/restricted-write-guard.ts')).toBe(true);
     expect(readFileSync('src/core/ops/pages.ts', 'utf8')).toContain('assertNoRestrictedTwin(');
   },
+  'restricted-advisor': () => {
+    expect(existsSync('src/core/restricted-advisor.ts')).toBe(true);
+    expect(readFileSync('src/core/ops/skills-catalog.ts', 'utf8')).toContain('assertAdvisorReadsWholeBrain(');
+  },
   'move-source': () => {
     expect(existsSync('src/core/move-source.ts')).toBe(true);
     expect(readFileSync('src/commands/pages.ts', 'utf8')).toContain("'move-source'");
