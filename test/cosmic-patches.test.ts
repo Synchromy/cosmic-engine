@@ -49,6 +49,10 @@ const PROBES: Record<string, () => void> = {
   'ops-expose-what-the-engine-can-do': () => {
     expect(existsSync('test/ops-expose-what-the-engine-can-do.test.ts')).toBe(true);
   },
+  'delete-fence-fact': () => {
+    expect(operationsByName.delete_fact).toBeDefined();
+    expect(operationsByName.delete_fact.params.provenance?.required).toBe(true);
+  },
   'embed-outage-defer': () => {
     expect(existsSync('src/core/embed-outage.ts')).toBe(true);
     expect(readFileSync('src/core/ops/pages.ts', 'utf8')).toContain('deferOnEmbedOutage: !noEmbed');
