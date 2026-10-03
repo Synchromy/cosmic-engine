@@ -187,6 +187,98 @@
       ]
     },
     {
+      "id": "embed-outage-defer",
+      "branch": "upstream/embed-outage-defer",
+      "what": "an embedder outage (401/402/403, key limit, 429 after one capped retry, 5xx, refused connection) lands a put_page write without its embedding, marked in cosmic_embed_waiting; `gbrain embed --waiting` catches it up and get_health counts the marked pages. A dimension mismatch, oversize payload or bad input still throws",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-09-30",
+        "note": "carried patch, not offered upstream: it relaxes upstream's deliberate no-silent-unembedded-pages rule (Codex C2), which holds here only because the waiting pages are counted and drained"
+      },
+      "since": "2026-09-30",
+      "depends_on": [
+        "c1-contained-mutations"
+      ],
+      "hub_uses": "the reconcile-loop catch-up tick and the dashboard's waiting banner (C-19, add-write-queue-for-outages), not yet written",
+      "tests": [
+        "test/embed-outage.test.ts"
+      ]
+    },
+    {
+      "id": "restricted-write-guard",
+      "branch": "upstream/restricted-write-guard",
+      "what": "a remote put_page/capture whose target source is not restricted, onto a slug that exists in restricted, is refused naming the restricted page; local writes and remote writes to a slug shared by visible sources are untouched",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-02",
+        "note": "carried patch, not offered upstream: the restricted source is Cosmic's member-level model (C-72)"
+      },
+      "since": "2026-10-02",
+      "depends_on": [],
+      "hub_uses": "every admin agent's /mcp put_page on a company Cosmic (C-72, add-restricted-content, finding 6)",
+      "tests": [
+        "test/restricted-write-guard.test.ts"
+      ]
+    },
+    {
+      "id": "link-sources-both-endpoints",
+      "branch": "upstream/link-sources-both-endpoints",
+      "what": "a scoped list_link_sources counts an edge only when both its endpoints are in the caller's scope, so a member-level client's counts carry no edge into restricted; unscoped local callers are unchanged",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-02",
+        "note": "never offered upstream: a cross-source count in upstream's own scoping, found by the C-72 member read sweep; offering it is a person's call"
+      },
+      "since": "2026-10-02",
+      "depends_on": [],
+      "hub_uses": "every member-level client's list_link_sources on a company Cosmic (C-72, add-restricted-content, finding 8)",
+      "tests": [
+        "test/link-sources-both-endpoints.test.ts"
+      ]
+    },
+    {
+      "id": "move-source",
+      "branch": "upstream/move-source",
+      "what": "`gbrain pages move-source <slug> <to> [--from <source>]` moves one page between engine sources in one transaction, keeping its id (chunks, versions, links, raw data and timeline follow it) and re-keying its page-local source rows; refused onto any row already at the destination slug; a schema walk fails on a source_id table it does not decide about",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-02",
+        "note": "carried patch, not offered upstream: the restricted source is Cosmic's member-level model (C-72)"
+      },
+      "since": "2026-10-02",
+      "depends_on": [],
+      "hub_uses": "clearing a restriction on a company Cosmic moves the page back to its visible source (C-72, add-restricted-content, finding 6)",
+      "tests": [
+        "test/move-source.test.ts"
+      ]
+    },
+    {
+      "id": "restricted-advisor",
+      "branch": "upstream/restricted-advisor",
+      "what": "the advisor reports on the whole brain, so a remote caller whose read grant does not cover every source is refused it (permission_denied, naming no source); trusted local callers and grants covering every source are unchanged",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-03",
+        "note": "carried patch, not offered upstream: the restricted source is Cosmic's member-level model (C-72)"
+      },
+      "since": "2026-10-03",
+      "depends_on": [],
+      "hub_uses": "every member-level client's advisor call on a company Cosmic (C-72, add-restricted-content, finding 8)",
+      "tests": [
+        "test/restricted-advisor.test.ts"
+      ]
+    },
+    {
       "id": "cosmic-brand",
       "script": "scripts/cosmic-brand.ts",
       "what": "Cosmic's name on what the engine tells a connected agent and the public: handshake, tool descriptions, hints, server and resource names, new credential prefixes (cosmic_). Inert unless COSMIC_BRAND is set",
@@ -233,6 +325,14 @@
     {
       "path": "test/effective-date-contract.test.ts",
       "why": "the frontmatter date keys are a contract (cosmic-engine #12)"
+    },
+    {
+      "path": "test/raw-data-source-pair.test.ts",
+      "why": "raw data resolves by (source_id, slug) and never falls back to another source's page: a contract the restricted source relies on (C-72, finding 3)"
+    },
+    {
+      "path": "test/member-read-sweep.test.ts",
+      "why": "every read op, as a member-level client, shows nothing from restricted or founders in any answer or count: the sweep the restricted source relies on (C-72, finding 8)"
     },
     {
       "path": "src/cosmic/brand.ts",
