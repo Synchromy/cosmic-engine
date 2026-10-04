@@ -236,4 +236,22 @@ describe('restricted-no-derive: meetings, entities and the cycle', () => {
       expect(visited).not.toContain('founders');
     }
   });
+
+  test('consolidate, which scans every source on a global cycle, promotes no restricted or founders facts and still promotes visible ones', async () => {
+    const old = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString();
+    for (const sourceId of ['restricted', 'founders', 'shared']) {
+      for (let i = 0; i < 3; i++) {
+        await engine.executeRaw(
+          `INSERT INTO facts (source_id, entity_slug, fact, kind, source, valid_from)
+           VALUES ($1, 'people/jane', $2, 'fact', 'test', $3::timestamptz)`,
+          [sourceId, `jane fact ${i}`, old],
+        );
+      }
+    }
+    const { runPhaseConsolidate } = await import('../src/core/cycle/phases/consolidate.ts');
+    const r = await runPhaseConsolidate(engine, { dryRun: true });
+    // Only the shared bucket passes the scan; without the patch all three do.
+    expect(r.details.buckets_processed).toBe(1);
+    expect(r.details.buckets_skipped).toBe(0);
+  });
 });
