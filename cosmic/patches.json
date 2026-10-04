@@ -279,6 +279,24 @@
       ]
     },
     {
+      "id": "restricted-no-derive",
+      "branch": "upstream/restricted-no-derive",
+      "what": "what the engine derives takes no input from the `restricted` source, nor from `founders`, which starts restricted (C-72 finding 10): the facts and chronicle backstops and their workers, extract_facts and the raw-turn facts pipeline (runFactsPipeline), extract_entities, the meeting timeline fan-out, the patterns phase's reflections, the per-source loops of conversation_facts_backfill and enrich_thin, consolidate's all-source facts scan, and a cycle run for restricted skip it; a restricted page keeps its own links, timeline and embedding",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-02",
+        "note": "carried patch, not offered upstream: the restricted source is Cosmic's member-level model (C-72)"
+      },
+      "since": "2026-10-02",
+      "depends_on": [],
+      "hub_uses": "none called: the hub lands restricted pages with gbrain capture into source restricted, and this keeps them out of facts, people and company pages (C-72, add-restricted-content, finding 9)",
+      "tests": [
+        "test/restricted-no-derive.test.ts"
+      ]
+    },
+    {
       "id": "cosmic-brand",
       "script": "scripts/cosmic-brand.ts",
       "what": "Cosmic's name on what the engine tells a connected agent and the public: handshake, tool descriptions, hints, server and resource names, new credential prefixes (cosmic_). Inert unless COSMIC_BRAND is set",
