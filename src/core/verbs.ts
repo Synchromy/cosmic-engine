@@ -168,7 +168,7 @@ const remember: Operation = {
       fact,
       provenance,
       kind: kind as (typeof FACT_KINDS)[number],
-      entity: target?.slug ?? null,
+      resolvedEntitySlug: target?.slug ?? null,
       visibility,
       validUntil,
     });

@@ -14,7 +14,8 @@
  *      page type: the caller named it. A title or slug-suffix hit is accepted
  *      only on an entity-shaped page (person, company, organization, entity,
  *      project), so a bare product name does not attach to a spreadsheet or
- *      a transcript that happens to share its title.
+ *      a transcript that happens to share its title. The first acceptable
+ *      match in rank order wins, not only the top one.
  *   2. The facts resolver's name arms (bare-name prefix expansion, fuzzy
  *      title match), which `remember` used before and which still reach
  *      `people/alice-example` from "Alice". Only a live page is accepted.
@@ -52,10 +53,12 @@ export async function resolveRememberEntity(
   const resolution = await resolveEntityPage(engine, sourceId, entity, opts);
   const best = resolution.best;
   if (best) {
-    const named = best.matched_by === 'alias' || best.matched_by === 'slug';
-    if (named || ENTITY_SHAPED_TYPES.has(best.type ?? '')) {
-      return { slug: best.slug, matched_by: best.matched_by };
-    }
+    // In rank order, the first match it may file under: a named page (alias,
+    // exact slug), or an entity-shaped one. A newer document sharing a
+    // project's title must not hide the project.
+    const ok = resolution.candidates.find(c =>
+      c.matched_by === 'alias' || c.matched_by === 'slug' || ENTITY_SHAPED_TYPES.has(c.type ?? ''));
+    if (ok) return { slug: ok.slug, matched_by: ok.matched_by };
   } else {
     const { resolveEntitySlugWithSource } = await import('../entities/resolve.ts');
     const legacy = await resolveEntitySlugWithSource(engine, sourceId, entity);
