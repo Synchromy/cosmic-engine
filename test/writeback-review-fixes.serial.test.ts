@@ -220,6 +220,9 @@ describe('brain.audience dual-plane + interview declaration (#31/#32)', () => {
 describe('visibility boundary round-trip (test bullet 9, end-to-end)', () => {
   test('a private fact written by the trusted lane is invisible to remote recall; world fact visible', async () => {
     await engine.executeRaw(`UPDATE sources SET local_path = NULL WHERE id = 'default'`).catch(() => {});
+    await engine.putPage('people/alice-example', {
+      title: 'Alice Example', type: 'person', compiled_truth: 'A synthetic test person.', timeline: '',
+    });
     // Trusted-local writes (remote:false): one private, one world.
     const w1 = await dispatchToolCall(engine, 'remember', {
       fact: 'keeps a private planning note about acme-example',

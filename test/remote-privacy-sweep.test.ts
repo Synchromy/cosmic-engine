@@ -411,6 +411,11 @@ beforeAll(async () => {
 
   // ── Seed the corpus (source: default) ──────────────────────────────
   const put = operationsByName['put_page'];
+  // The remember sweep target: remember refuses an entity with no page.
+  await put.handler(localCtx(), {
+    slug: 'people/sweep-fresh-entity',
+    content: '---\ntitle: Sweep Fresh Entity\ntype: person\n---\n\n# Sweep Fresh Entity\n\nSynthetic.\n',
+  });
   // 1. World page whose PRIVATE fence rows live BELOW the timeline
   //    sentinel — the exact #4546 topology (a fence in the `timeline`
   //    column of a world-visible page; a fence on a private page would
@@ -519,7 +524,11 @@ visibility: private
 private source-2 body
 `,
   });
-  await remember.handler(localCtx(SRC2), {
+  // A private src2 fact under a slug whose page lives only in the default
+  // source: the cross-source topology under test. The remember verb refuses
+  // an entity with no page in its source, so seed through the write seam.
+  const { writeSingleFact } = await import('../src/core/facts/write-single.ts');
+  await writeSingleFact(engine, SRC2, {
     fact: PRIV.src2Fact,
     provenance: 'sweep-seed',
     entity: WORLD_PAGE_SLUG,
