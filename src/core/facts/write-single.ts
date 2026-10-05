@@ -234,10 +234,26 @@ export async function writeSingleFact(
     // tree unusable) → DB-only path below.
   }
 
-  const inserted = await engine.insertFact(newFact, { // gbrain-allow-direct-insert: writeSingleFact legacy path for unparented / thin-client / stub-guarded facts (mirrors the pipeline's fallback buckets)
-    source_id: sourceId,
-    ...(supersedeId !== null ? { supersedeId } : {}),
-  });
+  const insertCtx = { source_id: sourceId, ...(supersedeId !== null ? { supersedeId } : {}) };
+  // A page the caller checked can be deleted while the embedding runs. Hold
+  // the page row (FOR SHARE: a delete waits for this insert) and check it is
+  // still live in the same transaction, so the fact never lands on a slug
+  // whose page is gone.
+  const inserted = preResolved
+    ? await engine.transaction(async (tx) => {
+      const live = await tx.executeRaw<{ id: number }>(
+        `SELECT id FROM pages WHERE source_id = $1 AND slug = $2 AND deleted_at IS NULL FOR SHARE`,
+        [sourceId, preResolved],
+      );
+      if (live.length === 0) {
+        const { verbError } = await import('../ops/contract.ts');
+        throw verbError('not_found',
+          `entity_not_found: ${preResolved} was deleted while the fact was being saved. Nothing was saved.`,
+          'Look the entity up again, or create the page, then retry.');
+      }
+      return tx.insertFact(newFact, insertCtx); // gbrain-allow-direct-insert: writeSingleFact legacy path, the checked page held in the same transaction
+    })
+    : await engine.insertFact(newFact, insertCtx); // gbrain-allow-direct-insert: writeSingleFact legacy path for unparented / thin-client / stub-guarded facts (mirrors the pipeline's fallback buckets)
 
   return {
     id: inserted.id,
