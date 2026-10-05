@@ -123,6 +123,8 @@ export interface EntityResolution {
   runnersUp: EntitySuggestion[];
   /** On a miss: the nearest pages, slug and title matches before content matches. */
   suggestions?: EntitySuggestion[];
+  /** Every precision-arm match in rank order, best first (remember picks the first it may file under). */
+  candidates: Array<{ slug: string; title: string; type: string | null; matched_by: EntityMatchedBy }>;
   /** Internal: the winning row, so the card is built without a second read. */
   row?: CardPageRow;
 }
@@ -139,7 +141,7 @@ export async function resolveEntityPage(
   opts: { remote: boolean },
 ): Promise<EntityResolution> {
   const trimmed = (name ?? '').trim();
-  if (!trimmed) return { best: null, runnersUp: [], suggestions: [] };
+  if (!trimmed) return { best: null, runnersUp: [], suggestions: [], candidates: [] };
 
   // #4352 — untrusted callers never resolve a `visibility: private` page into
   // a card (or a near-miss suggestion). Trust + config gate resolve through
@@ -232,7 +234,7 @@ export async function resolveEntityPage(
       || lastTouchedMs(b.row) - lastTouchedMs(a.row));
 
   if (candidates.length === 0) {
-    return { best: null, runnersUp: [], suggestions: await nearMissSuggestions(engine, sourceId, trimmed, excludePrivate) };
+    return { best: null, runnersUp: [], candidates: [], suggestions: await nearMissSuggestions(engine, sourceId, trimmed, excludePrivate) };
   }
 
   const top = candidates[0];
@@ -242,15 +244,12 @@ export async function resolveEntityPage(
     // A page that resolved through the precision arms exists by definition.
     create_safety: 'exists',
   }));
-  const matchedBy: EntityMatchedBy =
-    top.rank === ARM_ALIAS ? 'alias'
-      : top.rank === ARM_SUFFIX ? 'slug_suffix'
-        : exactSlugs.includes(top.slug) ? 'slug' : 'title';
-  return {
-    best: { slug: top.slug, title: top.row.title ?? top.slug, type: top.row.type, matched_by: matchedBy },
-    runnersUp,
-    row: top.row,
-  };
+  const matchedBy = (c: { slug: string; rank: number }): EntityMatchedBy =>
+    c.rank === ARM_ALIAS ? 'alias'
+      : c.rank === ARM_SUFFIX ? 'slug_suffix'
+        : exactSlugs.includes(c.slug) ? 'slug' : 'title';
+  const typed = candidates.map(c => ({ slug: c.slug, title: c.row.title ?? c.slug, type: c.row.type, matched_by: matchedBy(c) }));
+  return { best: typed[0], runnersUp, candidates: typed, row: top.row };
 }
 
 export async function buildEntityCard(
@@ -273,7 +272,7 @@ export async function buildEntityCard(
 
 function exactMatchPreference(row: CardPageRow, exactSlugs: string[]): number {
   if (exactSlugs.includes(row.slug)) return 0;
-  return ENTITY_PAGE_TYPES.has(row.type ?? '') ? 1 : 2;
+  return ENTITY_SHAPED_TYPES.has(row.type ?? '') ? 1 : 2;
 }
 
 async function assembleCard(
@@ -532,8 +531,11 @@ async function nameMatchSuggestions(
 
   let rows: Array<{ slug: string; title: string | null; type: string | null }> = [];
   try {
+    // The privacy predicate sits on this read too, not only on resolve_slugs:
+    // the titles shown come from here, and a page can turn private between.
+    const { privatePagesFilterFragment } = await import('../search/private-visibility.ts');
     rows = await engine.executeRaw<{ slug: string; title: string | null; type: string | null }>(
-      `SELECT slug, title, type FROM pages WHERE deleted_at IS NULL AND source_id = $1 AND slug = ANY($2::text[])`,
+      `SELECT slug, title, type FROM pages WHERE deleted_at IS NULL AND source_id = $1 AND slug = ANY($2::text[])${excludePrivate ? ` AND ${privatePagesFilterFragment('pages')}` : ''}`,
       [sourceId, ordered],
     );
   } catch {

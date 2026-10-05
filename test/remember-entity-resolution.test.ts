@@ -168,3 +168,44 @@ describe('entity: a miss offers name matches before content matches', () => {
     expect(slugs.length).toBeLessThanOrEqual(5);
   });
 });
+
+describe('Codex review of #29', () => {
+  it('the page remember checked is the page it writes under, never one a second lookup picks', async () => {
+    await seed('people/alice.example', 'Alice Dotted', 'person', 'A public person page with a dotted slug.');
+    await engine.setPageAliases('people/alice.example', 'default', [normalizeAlias('Alice Dotted Alias')]);
+    await operationsByName['put_page'].handler(localCtx(), {
+      slug: 'people/hidden-alice',
+      content: '---\ntitle: Hidden Alice\ntype: person\nvisibility: private\n---\n\n# Hidden Alice\n\nPrivate.\n',
+    });
+    await engine.setPageAliases('people/hidden-alice', 'default', [normalizeAlias('people/alice.example')]);
+    const { isError, body } = await remember('Alice Dotted Alias');
+    expect(isError).toBe(false);
+    expect(body.entity_slug).toBe('people/alice.example');
+    expect(await factCount('people/hidden-alice')).toBe(0);
+  });
+
+  it('a project is not hidden by a newer document with the same title', async () => {
+    await seed('projects/sprocket', 'Sprocket', 'project', 'The sprocket product.');
+    await seed('inbox/drive/sprocket-doc', 'Sprocket', 'document', 'A newer document with the same title.');
+    const { isError, body } = await remember('Sprocket');
+    expect(isError).toBe(false);
+    expect(body.entity_slug).toBe('projects/sprocket');
+    const card = await call('entity', { name: 'Sprocket' });
+    expect(card.body.card.entity.slug).toBe('projects/sprocket');
+  });
+
+  it('a private page never appears in a remote caller\'s suggestions', async () => {
+    await operationsByName['put_page'].handler(localCtx(), {
+      slug: 'companies/secretive-example',
+      content: '---\ntitle: Secretive Example\ntype: company\nvisibility: private\n---\n\n# Secretive Example\n\nPrivate.\n',
+    });
+    const miss = await call('entity', { name: 'orgs/secretive-example' });
+    expect(miss.body.found).toBe(false);
+    expect(JSON.stringify(miss.body.suggestions)).not.toContain('companies/secretive-example');
+    expect(JSON.stringify(miss.body.suggestions)).not.toContain('Secretive Example');
+    const refused = await remember('orgs/secretive-example');
+    expect(refused.isError).toBe(true);
+    expect(refused.body.suggestion).not.toContain('companies/secretive-example');
+    expect(JSON.parse(refused.body.detail).suggestions.map((x: { slug: string }) => x.slug)).not.toContain('companies/secretive-example');
+  });
+});

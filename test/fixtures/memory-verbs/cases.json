@@ -41,6 +41,37 @@
     "expectSuggestion": true
   },
   {
+    "name": "remember writes a fact without an entity (string id, enum status, null entity_slug)",
+    "verb": "remember",
+    "params": {
+      "fact": "conformance {{marker}}: a fact with no subject",
+      "provenance": "conformance run {{marker}}"
+    },
+    "validateSchema": true,
+    "expect": [
+      {
+        "path": "id",
+        "type": "string"
+      },
+      {
+        "path": "status",
+        "oneOf": [
+          "inserted",
+          "duplicate",
+          "superseded"
+        ]
+      },
+      {
+        "path": "entity_slug",
+        "equals": null
+      },
+      {
+        "path": "protocol_version",
+        "equals": 1
+      }
+    ]
+  },
+  {
     "name": "remember writes a fact (string id, enum status, echoed nulls)",
     "verb": "remember",
     "requiresSeededEntity": true,
@@ -77,11 +108,9 @@
   {
     "name": "remember with ttl returns ISO valid_until",
     "verb": "remember",
-    "requiresSeededEntity": true,
     "params": {
       "fact": "conformance {{marker}}: expiring fact",
       "provenance": "conformance run {{marker}}",
-      "entity": "people/conformance-{{marker}}",
       "ttl": "30d"
     },
     "validateSchema": true,
@@ -268,7 +297,6 @@
   {
     "name": "forget expires the remembered fact",
     "verb": "forget",
-    "requiresSeededEntity": true,
     "params": {
       "id": "{{id:fact2}}",
       "reason": "conformance cleanup"
@@ -284,7 +312,6 @@
   {
     "name": "forget again is idempotent (expired:false, success)",
     "verb": "forget",
-    "requiresSeededEntity": true,
     "params": {
       "id": "{{id:fact2}}"
     },

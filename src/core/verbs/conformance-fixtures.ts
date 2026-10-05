@@ -85,6 +85,21 @@ export const CONFORMANCE_CASES: ConformanceCase[] = [
     expectSuggestion: true,
   },
   {
+    name: 'remember writes a fact without an entity (string id, enum status, null entity_slug)',
+    verb: 'remember',
+    params: {
+      fact: 'conformance {{marker}}: a fact with no subject',
+      provenance: 'conformance run {{marker}}',
+    },
+    validateSchema: true,
+    expect: [
+      { path: 'id', type: 'string' },
+      { path: 'status', oneOf: ['inserted', 'duplicate', 'superseded'] },
+      { path: 'entity_slug', equals: null },
+      { path: 'protocol_version', equals: 1 },
+    ],
+  },
+  {
     name: 'remember writes a fact (string id, enum status, echoed nulls)',
     verb: 'remember',
     // remember files a fact only under an existing page.
@@ -106,12 +121,10 @@ export const CONFORMANCE_CASES: ConformanceCase[] = [
   {
     name: 'remember with ttl returns ISO valid_until',
     verb: 'remember',
-    // remember files a fact only under an existing page.
-    requiresSeededEntity: true,
+    // No entity: runs on every endpoint, and the forget cases expire this fact.
     params: {
       fact: 'conformance {{marker}}: expiring fact',
       provenance: 'conformance run {{marker}}',
-      entity: 'people/conformance-{{marker}}',
       ttl: '30d',
     },
     validateSchema: true,
@@ -230,8 +243,6 @@ export const CONFORMANCE_CASES: ConformanceCase[] = [
   {
     name: 'forget expires the remembered fact',
     verb: 'forget',
-    // remember files a fact only under an existing page.
-    requiresSeededEntity: true,
     params: { id: '{{id:fact2}}', reason: 'conformance cleanup' },
     validateSchema: true,
     expect: [{ path: 'expired', equals: true }],
@@ -239,8 +250,6 @@ export const CONFORMANCE_CASES: ConformanceCase[] = [
   {
     name: 'forget again is idempotent (expired:false, success)',
     verb: 'forget',
-    // remember files a fact only under an existing page.
-    requiresSeededEntity: true,
     params: { id: '{{id:fact2}}' },
     validateSchema: true,
     expect: [{ path: 'expired', equals: false }],
