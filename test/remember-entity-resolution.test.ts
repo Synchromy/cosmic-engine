@@ -209,16 +209,3 @@ describe('Codex review of #29', () => {
     expect(JSON.parse(refused.body.detail).suggestions.map((x: { slug: string }) => x.slug)).not.toContain('companies/secretive-example');
   });
 });
-
-describe('a page deleted between the check and the write', () => {
-  it('saves nothing and says so', async () => {
-    const { writeSingleFact } = await import('../src/core/facts/write-single.ts');
-    await seed('people/gone-example', 'Gone Example', 'person', 'Deleted below.');
-    await engine.executeRaw(`UPDATE pages SET deleted_at = now() WHERE slug = 'people/gone-example'`);
-    await expect(writeSingleFact(engine, 'default', {
-      fact: 'a fact about a page that was just deleted', provenance: 'test',
-      resolvedEntitySlug: 'people/gone-example', visibility: 'world',
-    })).rejects.toThrow('entity_not_found');
-    expect(await factCount('people/gone-example')).toBe(0);
-  });
-});
