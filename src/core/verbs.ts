@@ -82,7 +82,7 @@ const remember: Operation = {
     entity: {
       type: 'string',
       description:
-        'Person/company/project this fact is about (name or slug; canonicalized server-side). Set it whenever the fact has a subject — entity-scoped recall misses unattributed facts.',
+        'Person/company/project this fact is about (name or slug), resolved the way the entity verb resolves it. An entity that matches no page is refused with the nearest pages (error entity_not_found): retry with one of their slugs, create the page first, or omit entity. Set it whenever the fact has a subject — entity-scoped recall misses unattributed facts.',
     },
     kind: {
       type: 'string',
@@ -158,11 +158,17 @@ const remember: Operation = {
     // subjectless statements, and resolving them would file the fact under
     // a non-existent entity_slug no lookup can reach.
     const entityParam = typeof p.entity === 'string' ? p.entity.trim() : null;
+    // The entity resolves the way `entity` resolves it, or nothing is saved:
+    // a fact under a slug with no page is invisible (verbs/remember-entity.ts).
+    const target = entityParam && !isNullLikeEntity(entityParam)
+      ? await (await import('./verbs/remember-entity.ts')).resolveRememberEntity(
+        ctx.engine, ctx.sourceId ?? 'default', entityParam, { remote: ctx.remote !== false })
+      : null;
     const result = await writeSingleFact(ctx.engine, ctx.sourceId ?? 'default', {
       fact,
       provenance,
       kind: kind as (typeof FACT_KINDS)[number],
-      entity: entityParam && !isNullLikeEntity(entityParam) ? entityParam : null,
+      entity: target?.slug ?? null,
       visibility,
       validUntil,
     });
@@ -180,6 +186,7 @@ const remember: Operation = {
       status: result.status,
       status_text: statusText,
       entity_slug: result.entity_slug ?? null,
+      ...(target ? { entity_matched_by: target.matched_by } : {}),
       valid_until: result.valid_until ? result.valid_until.toISOString() : null,
       ...(result.degraded_dedup ? { degraded_dedup: true } : {}),
       protocol_version: MEMORY_VERBS_VERSION,
@@ -515,6 +522,8 @@ export const RESPONSE_SCHEMAS: Record<VerbName, Record<string, unknown>> = {
       status: { type: 'string', enum: STATUS_ENUM, description: 'Branch on THIS, never on status_text.' },
       status_text: { type: 'string', description: 'Human rendering of status. Display only — never branch on it.' },
       entity_slug: { type: ['string', 'null'] },
+      // Additive optional: how `entity` matched a page (absent without an entity).
+      entity_matched_by: { type: 'string', enum: ['alias', 'slug', 'title', 'slug_suffix', 'name'] },
       valid_until: { type: ['string', 'null'], description: 'ISO 8601 or null (never expires).' },
       degraded_dedup: { type: 'boolean', description: 'Present (true) when no embedding provider — near-duplicates may insert.' },
     },

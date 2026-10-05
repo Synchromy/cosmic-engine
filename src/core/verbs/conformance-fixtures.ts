@@ -74,8 +74,21 @@ export const CONFORMANCE_CASES: ConformanceCase[] = [
     expectSuggestion: true,
   },
   {
+    name: 'remember refuses an entity with no page (entity_not_found + suggestion)',
+    verb: 'remember',
+    params: {
+      fact: 'conformance {{marker}}: a fact about nobody',
+      provenance: 'conformance run {{marker}}',
+      entity: 'zzz-no-such-entity-{{marker}}',
+    },
+    expectErrorCode: 'not_found',
+    expectSuggestion: true,
+  },
+  {
     name: 'remember writes a fact (string id, enum status, echoed nulls)',
     verb: 'remember',
+    // remember files a fact only under an existing page.
+    requiresSeededEntity: true,
     params: {
       fact: 'conformance {{marker}}: the protocol round-trip fact',
       provenance: 'conformance run {{marker}}',
@@ -93,6 +106,8 @@ export const CONFORMANCE_CASES: ConformanceCase[] = [
   {
     name: 'remember with ttl returns ISO valid_until',
     verb: 'remember',
+    // remember files a fact only under an existing page.
+    requiresSeededEntity: true,
     params: {
       fact: 'conformance {{marker}}: expiring fact',
       provenance: 'conformance run {{marker}}',
@@ -106,6 +121,8 @@ export const CONFORMANCE_CASES: ConformanceCase[] = [
   {
     name: 'remember private fact (fence test setup)',
     verb: 'remember',
+    // remember files a fact only under an existing page.
+    requiresSeededEntity: true,
     params: {
       fact: 'conformance {{marker}} PRIVATE-SENTINEL commitment',
       provenance: 'conformance run {{marker}}',
@@ -120,6 +137,8 @@ export const CONFORMANCE_CASES: ConformanceCase[] = [
   {
     name: 'recall by entity round-trips the remembered fact (superset envelope)',
     verb: 'recall',
+    // remember files a fact only under an existing page.
+    requiresSeededEntity: true,
     params: { entity: 'people/conformance-{{marker}}' },
     validateSchema: true,
     expect: [
@@ -132,6 +151,8 @@ export const CONFORMANCE_CASES: ConformanceCase[] = [
   {
     name: 'recall with budget reports consistent budget meta',
     verb: 'recall',
+    // remember files a fact only under an existing page.
+    requiresSeededEntity: true,
     params: { entity: 'people/conformance-{{marker}}', budget_tokens: 10000 },
     validateSchema: true,
     expect: [
@@ -144,6 +165,8 @@ export const CONFORMANCE_CASES: ConformanceCase[] = [
   {
     name: 'recall with budget smaller than the first item drops everything',
     verb: 'recall',
+    // remember files a fact only under an existing page.
+    requiresSeededEntity: true,
     params: { entity: 'people/conformance-{{marker}}', budget_tokens: 1 },
     validateSchema: true,
     expect: [
@@ -207,6 +230,8 @@ export const CONFORMANCE_CASES: ConformanceCase[] = [
   {
     name: 'forget expires the remembered fact',
     verb: 'forget',
+    // remember files a fact only under an existing page.
+    requiresSeededEntity: true,
     params: { id: '{{id:fact2}}', reason: 'conformance cleanup' },
     validateSchema: true,
     expect: [{ path: 'expired', equals: true }],
@@ -214,6 +239,8 @@ export const CONFORMANCE_CASES: ConformanceCase[] = [
   {
     name: 'forget again is idempotent (expired:false, success)',
     verb: 'forget',
+    // remember files a fact only under an existing page.
+    requiresSeededEntity: true,
     params: { id: '{{id:fact2}}' },
     validateSchema: true,
     expect: [{ path: 'expired', equals: false }],
