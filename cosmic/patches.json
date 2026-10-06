@@ -316,6 +316,24 @@
       ]
     },
     {
+      "id": "put-page-usage",
+      "branch": "upstream/put-page-usage",
+      "what": "put_page (and capture, which delegates to it) returns outcome (created | updated | unchanged), embed_tokens and embed_cost_usd for the indexing the write caused, and serve-http's success insert merges those three into the mcp_request_log row's params; status is unchanged and params was already jsonb, so no migration. embed_tokens is the engine's per-chunk estimate (content_chunks.token_count), priced at the configured embedding model's rate",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-06",
+        "note": "carried patch, not offered upstream: the request-log usage fields serve Cosmic's usage ledger"
+      },
+      "since": "2026-10-06",
+      "depends_on": [],
+      "hub_uses": "none called yet: the hub's usage ledger reads mcp_request_log.params outcome/embed_tokens/embed_cost_usd once its engine pin moves (cosmic-hub #1477, decision 1)",
+      "tests": [
+        "test/put-page-usage.test.ts"
+      ]
+    },
+    {
       "id": "cosmic-brand",
       "script": "scripts/cosmic-brand.ts",
       "what": "Cosmic's name on what the engine tells a connected agent and the public: handshake, tool descriptions, hints, server and resource names, new credential prefixes (cosmic_). Inert unless COSMIC_BRAND is set",

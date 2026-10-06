@@ -268,6 +268,10 @@ export interface ImportResult {
    * distinct type per run.
    */
   type_warning?: { kind: 'alias_of' | 'undeclared'; type: string; canonical?: string; directory?: string };
+  /** Cosmic put-page-usage: on status='imported', whether the page existed. */
+  outcome?: 'created' | 'updated';
+  /** Cosmic put-page-usage: estimated tokens this write sent to the embedder (0 when none). */
+  embed_tokens?: number;
 }
 
 export const MAX_FILE_SIZE = 5_000_000; // 5MB
@@ -1189,6 +1193,8 @@ export async function importFromContent(
     status: 'imported',
     chunks: chunks.length,
     parsedPage,
+    outcome: existing ? 'updated' : 'created',
+    embed_tokens: chunks.reduce((n, c) => n + (c.embedding ? (c.token_count ?? 0) : 0), 0),
     ...(pageQuarantined ? { quarantined: true } : {}),
     ...(pageFlagged ? { flagged: true, flag_reason: pageFlagReason } : {}),
     ...(typeWarning ? { type_warning: typeWarning } : {}),
