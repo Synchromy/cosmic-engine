@@ -84,6 +84,11 @@ const PROBES: Record<string, () => void> = {
     expect(readFileSync('src/core/verbs.ts', 'utf8')).toContain('resolveRememberEntity(');
     expect(readFileSync('src/core/verbs/entity-card.ts', 'utf8')).toContain('nameMatchSuggestions(');
   },
+  'put-page-usage': () => {
+    expect(existsSync('src/core/put-page-usage.ts')).toBe(true);
+    expect(readFileSync('src/core/ops/pages.ts', 'utf8')).toContain('...putPageUsage(result)');
+    expect(readFileSync('src/commands/serve-http.ts', 'utf8')).toContain('requestLogParamsWithUsage(name, logParamsObj, toolResult)');
+  },
   'cosmic-brand': () => {
     // Every anchor applied; test/cosmic-brand.test.ts is the leak test proper.
     const r = brandCheck('.', true);
