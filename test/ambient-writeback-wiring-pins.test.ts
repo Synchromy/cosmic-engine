@@ -30,6 +30,10 @@ beforeAll(async () => {
   engine = new PGLiteEngine();
   await engine.connect({});
   await engine.initSchema();
+  // remember refuses an entity with no page.
+  await engine.putPage('people/alice-example', {
+    title: 'Alice Example', type: 'person', compiled_truth: 'A synthetic test person.', timeline: '',
+  });
 }, 120_000);
 
 afterAll(async () => {

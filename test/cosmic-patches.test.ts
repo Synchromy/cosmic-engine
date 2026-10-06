@@ -79,6 +79,11 @@ const PROBES: Record<string, () => void> = {
     expect(existsSync('src/core/restricted-no-derive.ts')).toBe(true);
     expect(readFileSync('src/core/facts/backstop.ts', 'utf8')).toContain('derivesFrom(ctx.sourceId)');
   },
+  'remember-resolves-entity': () => {
+    expect(existsSync('src/core/verbs/remember-entity.ts')).toBe(true);
+    expect(readFileSync('src/core/verbs.ts', 'utf8')).toContain('resolveRememberEntity(');
+    expect(readFileSync('src/core/verbs/entity-card.ts', 'utf8')).toContain('nameMatchSuggestions(');
+  },
   'cosmic-brand': () => {
     // Every anchor applied; test/cosmic-brand.test.ts is the leak test proper.
     const r = brandCheck('.', true);

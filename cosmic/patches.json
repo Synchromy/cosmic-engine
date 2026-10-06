@@ -297,6 +297,25 @@
       ]
     },
     {
+      "id": "remember-resolves-entity",
+      "branch": "upstream/remember-resolves-entity",
+      "what": "remember resolves its entity through the entity verb's resolution (alias > exact slug > exact title > slug-suffix; a title or suffix match only on a person, company, organization, entity or project page), then the facts resolver's name arms, and refuses an entity that matches no page (not_found, entity_not_found, nearest pages in the suggestion and as JSON in detail) instead of filing the fact under a slug no page has; entity's miss suggestions put title and slug matches (resolve_slugs, plus the last slug segment) ahead of content matches",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-06",
+        "note": "carried patch, not offered upstream yet: upstream master (v0.60.65.0) still files an explicit pageless entity database-only with no warning (persistence/memory-mutations.ts planRememberTarget), so it is upstream-bound once Neel decides"
+      },
+      "since": "2026-10-06",
+      "depends_on": [],
+      "hub_uses": "remember: every connected agent's remember call; hub writers ingest/dated-facts-store.ts, serve/onboarding/complete.ts and serve/research-tools.ts pass slugs of pages that exist, serve/attribution-tools.ts copies the corrected fact's entity",
+      "tests": [
+        "test/remember-entity-resolution.test.ts",
+        "test/memory-verbs-conformance.test.ts"
+      ]
+    },
+    {
       "id": "cosmic-brand",
       "script": "scripts/cosmic-brand.ts",
       "what": "Cosmic's name on what the engine tells a connected agent and the public: handshake, tool descriptions, hints, server and resource names, new credential prefixes (cosmic_). Inert unless COSMIC_BRAND is set",

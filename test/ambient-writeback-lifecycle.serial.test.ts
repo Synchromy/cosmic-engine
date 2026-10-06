@@ -177,6 +177,11 @@ describe('ambient writeback — hermetic 5-step lifecycle', () => {
       expect(instructions).toContain('ttl: "3d"');
       expect(instructions).toContain('not the public internet');
 
+      // remember refuses an entity with no page: the agent creates it first.
+      await s1.call(20, 'put_page', {
+        slug: 'people/alice-example',
+        content: '---\ntitle: Alice Example\ntype: person\n---\n\n# Alice Example\n\nA synthetic test person.\n',
+      });
       const remembered = await s1.call(2, 'remember', {
         fact: 'prefers dark mode in every editor',
         kind: 'preference',
