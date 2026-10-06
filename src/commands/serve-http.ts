@@ -53,6 +53,7 @@ import { hasScope, ALLOWED_SCOPES_LIST, normalizeScopesInput } from '../core/sco
 import { normalizeTokenScopes } from '../core/legacy-token-scope.ts';
 import { normalizeSourceInput, normalizeFederatedReadInput } from '../core/source-id.ts';
 import { summarizeMcpParams, dispatchToolCall, requestLogStatusForResult } from '../mcp/dispatch.ts';
+import { requestLogParamsWithUsage } from '../core/put-page-usage.ts';
 import { resolveStrictParamsMode } from '../mcp/validate-params.ts';
 import { buildToolDefs } from '../mcp/tool-defs.ts';
 import {
@@ -2613,7 +2614,7 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
           `INSERT INTO mcp_request_log (token_name, agent_name, operation, latency_ms, status, params)
            VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
           [authInfo.clientId, agentName, name, latency, successStatus],
-          [logParamsObj],
+          [requestLogParamsWithUsage(name, logParamsObj, toolResult)],
         );
       } catch { /* best effort */ }
       broadcastEvent({

@@ -20,6 +20,7 @@ import { isFactsBackstopEligible } from '../facts/eligibility.ts';
 import { sanitizeRemoteBody } from '../remote-body.ts';
 import type { WriterLintPayload } from '../output/post-write.ts';
 import { getContentFlag } from '../quarantine.ts';
+import { putPageUsage } from '../put-page-usage.ts';
 import { bumpLastRetrievedAt } from '../last-retrieved.ts';
 import { resolveExcludePrivatePages, isPrivatePage, findPrivateOnlySlugs } from '../search/private-visibility.ts';
 import { LIST_PAGES_DESCRIPTION, CAPTURE_DESCRIPTION } from '../operations-descriptions.ts';
@@ -819,6 +820,7 @@ const put_page: Operation = {
       slug: result.slug,
       status: result.status === 'imported' ? 'created_or_updated' : result.status,
       chunks: result.chunks,
+      ...putPageUsage(result),
       // #3984: a skipped/error status without the reason is a silent no-op to
       // MCP callers (e.g. the >5MB size guard returned bare status 'skipped'
       // and the agent had no idea why the page never appeared). Thread
