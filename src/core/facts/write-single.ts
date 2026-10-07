@@ -55,6 +55,12 @@ export interface SingleFactInput {
   kind?: NewFact['kind'];
   /** Free-form entity ref; canonicalized via resolveEntitySlugWithSource. */
   entity?: string | null;
+  /**
+   * A live page slug the caller already resolved and checked (the remember
+   * verb, verbs/remember-entity.ts). Used as is: resolving it a second time
+   * could pick a different page, one the caller was not allowed to see.
+   */
+  resolvedEntitySlug?: string | null;
   /** Facts-layer default 'private'; the remember VERB passes 'world' [F2]. */
   visibility?: 'private' | 'world';
   validUntil?: Date | null;
@@ -97,11 +103,14 @@ export async function writeSingleFact(
   // slug. Applied here (not only at the verb boundary) so every
   // writeSingleFact caller (google/loops-extract, future verbs) gets the
   // same guard.
-  const entityRef = isNullLikeEntity(input.entity) ? null : input.entity!.trim();
-  const resolved = entityRef
-    ? await resolveEntitySlugWithSource(engine, sourceId, entityRef)
-    : null;
-  const resolvedSlug = entityRef ? (resolved?.slug ?? entityRef) : null;
+  const preResolved = input.resolvedEntitySlug ? input.resolvedEntitySlug : null;
+  const entityRef = preResolved ? null : isNullLikeEntity(input.entity) ? null : input.entity!.trim();
+  const resolved = preResolved
+    ? { slug: preResolved, source: 'exact_page' as const }
+    : entityRef
+      ? await resolveEntitySlugWithSource(engine, sourceId, entityRef)
+      : null;
+  const resolvedSlug = preResolved ?? (entityRef ? (resolved?.slug ?? entityRef) : null);
   // #4108: provenance for the fence writer's stub guard. Null when the
   // resolver returned nothing (fail-closed — no live page was verified).
   const resolutionSource = resolved?.source ?? null;

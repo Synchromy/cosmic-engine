@@ -16,6 +16,7 @@ import { isCrossSourceLinksEnabled } from './link-extraction.ts';
 import { computeEffectiveDate } from './effective-date.ts';
 import { parseFrontmatter } from './backfill-effective-date.ts';
 import { isPrivatePage } from './search/private-visibility.ts';
+import { derivesFrom } from './restricted-no-derive.ts';
 
 export interface ExtractTimelineFromMeetingsOpts {
   dryRun?: boolean;
@@ -157,6 +158,7 @@ export async function extractTimelineFromMeetings(
   }
 
   for (const meeting of meetings) {
+    if (!derivesFrom(meeting.source_id)) continue;
     if (sinceMs !== null) {
       const updatedMs = new Date(meeting.updated_at).getTime();
       if (Number.isFinite(updatedMs) && updatedMs <= sinceMs) continue;

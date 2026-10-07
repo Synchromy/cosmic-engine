@@ -826,7 +826,19 @@ export function isKeylessStaleRefusal(args: string[], embeddingDisabled: boolean
     && embeddingDisabled === true;
 }
 
+/** Cosmic C-19: `embed --waiting`, the timer-run catch-up (core/embed-waiting-drain.ts). */
+async function runEmbedWaiting(engine: BrainEngine, json: boolean): Promise<EmbedResult> {
+  const { drainEmbedWaiting } = await import('../core/embed-waiting-drain.ts');
+  const r = await drainEmbedWaiting(engine);
+  if (json) process.stdout.write(JSON.stringify(r) + '\n');
+  else if (r.no_embedder) process.stdout.write('[embed] no embedder configured; waiting pages left untouched.\n');
+  else if (r.outage) process.stdout.write(`[embed] embedder is still out; ${r.pages_waiting} page(s) left waiting.\n`);
+  else process.stdout.write(`[embed] waiting: embedded ${r.pages_embedded} page(s) and ${r.facts_embedded} fact(s); ${r.pages_waiting} page(s) remain.\n`);
+  return { embedded: r.pages_embedded, skipped: 0, would_embed: 0, total_chunks: 0, pages_processed: r.pages_embedded, failures: 0, failure_samples: [], dryRun: false, chunkless_pages_healed: 0 };
+}
+
 export async function runEmbed(engine: BrainEngine, args: string[]): Promise<EmbedResult | undefined> {
+  if (args.includes('--waiting')) return runEmbedWaiting(engine, args.includes('--json'));
   // Keyless clean refusal — see isKeylessStaleRefusal. Checked BEFORE the
   // background block so we never queue a job that can only fail. stderr only;
   // stdout stays empty like every other embed outcome (embed has no JSON
@@ -910,7 +922,7 @@ export async function runEmbed(engine: BrainEngine, args: string[]): Promise<Emb
   } else {
     const slug = args.find(a => !a.startsWith('--'));
     if (!slug) {
-      serr('Usage: gbrain embed [<slug>|--all|--stale|--slugs s1 s2 ...] [--dry-run] [--batch-size N] [--priority recent] [--catch-up] [--include-null-signature]');
+      serr('Usage: gbrain embed [<slug>|--all|--stale|--waiting|--slugs s1 s2 ...] [--dry-run] [--batch-size N] [--priority recent] [--catch-up] [--include-null-signature]');
       process.exit(1);
     }
     opts = { slug, dryRun, sourceId, batchSize, priority, catchUp };

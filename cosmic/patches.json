@@ -167,6 +167,193 @@
       ]
     },
     {
+      "id": "delete-fence-fact",
+      "branch": "upstream/delete-fence-fact",
+      "what": "delete_fact: delete one fence row and its facts row together, under the source and page locks, for the writer that names the row's provenance exactly; records no withdrawal",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-09-27",
+        "note": "carried patch only for now (Khoa, 2026-09-27): not offered upstream, overriding the task's 'upstream first'"
+      },
+      "since": "2026-09-27",
+      "depends_on": [
+        "c1-contained-mutations"
+      ],
+      "hub_uses": "delete_fact: the dated-facts removal job (C-39, add-dated-facts), not yet written",
+      "tests": [
+        "test/delete-fence-fact.test.ts"
+      ]
+    },
+    {
+      "id": "embed-outage-defer",
+      "branch": "upstream/embed-outage-defer",
+      "what": "an embedder outage (401/402/403, key limit, 429 after one capped retry, 5xx, refused connection) lands a put_page write without its embedding, marked in cosmic_embed_waiting; `gbrain embed --waiting` catches it up and get_health counts the marked pages. A dimension mismatch, oversize payload or bad input still throws",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-09-30",
+        "note": "carried patch, not offered upstream: it relaxes upstream's deliberate no-silent-unembedded-pages rule (Codex C2), which holds here only because the waiting pages are counted and drained"
+      },
+      "since": "2026-09-30",
+      "depends_on": [
+        "c1-contained-mutations"
+      ],
+      "hub_uses": "the reconcile-loop catch-up tick and the dashboard's waiting banner (C-19, add-write-queue-for-outages), not yet written",
+      "tests": [
+        "test/embed-outage.test.ts"
+      ]
+    },
+    {
+      "id": "restricted-write-guard",
+      "branch": "upstream/restricted-write-guard",
+      "what": "a remote put_page/capture whose target source is not restricted, onto a slug that exists in restricted, is refused naming the restricted page; local writes and remote writes to a slug shared by visible sources are untouched",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-02",
+        "note": "carried patch, not offered upstream: the restricted source is Cosmic's member-level model (C-72)"
+      },
+      "since": "2026-10-02",
+      "depends_on": [],
+      "hub_uses": "every admin agent's /mcp put_page on a company Cosmic (C-72, add-restricted-content, finding 6)",
+      "tests": [
+        "test/restricted-write-guard.test.ts"
+      ]
+    },
+    {
+      "id": "link-sources-both-endpoints",
+      "branch": "upstream/link-sources-both-endpoints",
+      "what": "a scoped list_link_sources counts an edge only when both its endpoints are in the caller's scope, so a member-level client's counts carry no edge into restricted; unscoped local callers are unchanged",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-02",
+        "note": "never offered upstream: a cross-source count in upstream's own scoping, found by the C-72 member read sweep; offering it is a person's call"
+      },
+      "since": "2026-10-02",
+      "depends_on": [],
+      "hub_uses": "every member-level client's list_link_sources on a company Cosmic (C-72, add-restricted-content, finding 8)",
+      "tests": [
+        "test/link-sources-both-endpoints.test.ts"
+      ]
+    },
+    {
+      "id": "move-source",
+      "branch": "upstream/move-source",
+      "what": "`gbrain pages move-source <slug> <to> [--from <source>]` moves one page between engine sources in one transaction, keeping its id (chunks, versions, links, raw data and timeline follow it) and re-keying its page-local source rows; refused onto any row already at the destination slug; a schema walk fails on a source_id table it does not decide about",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-02",
+        "note": "carried patch, not offered upstream: the restricted source is Cosmic's member-level model (C-72)"
+      },
+      "since": "2026-10-02",
+      "depends_on": [],
+      "hub_uses": "clearing a restriction on a company Cosmic moves the page back to its visible source (C-72, add-restricted-content, finding 6)",
+      "tests": [
+        "test/move-source.test.ts"
+      ]
+    },
+    {
+      "id": "restricted-advisor",
+      "branch": "upstream/restricted-advisor",
+      "what": "the advisor reports on the whole brain, so a remote caller whose read grant does not cover every source is refused it (permission_denied, naming no source); trusted local callers and grants covering every source are unchanged",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-03",
+        "note": "carried patch, not offered upstream: the restricted source is Cosmic's member-level model (C-72)"
+      },
+      "since": "2026-10-03",
+      "depends_on": [],
+      "hub_uses": "every member-level client's advisor call on a company Cosmic (C-72, add-restricted-content, finding 8)",
+      "tests": [
+        "test/restricted-advisor.test.ts"
+      ]
+    },
+    {
+      "id": "restricted-no-derive",
+      "branch": "upstream/restricted-no-derive",
+      "what": "what the engine derives takes no input from the `restricted` source, nor from `founders`, which starts restricted (C-72 finding 10): the facts and chronicle backstops and their workers, extract_facts and the raw-turn facts pipeline (runFactsPipeline), extract_entities, the meeting timeline fan-out, the patterns phase's reflections, the per-source loops of conversation_facts_backfill and enrich_thin, consolidate's all-source facts scan, and a cycle run for restricted skip it; a restricted page keeps its own links, timeline and embedding",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-02",
+        "note": "carried patch, not offered upstream: the restricted source is Cosmic's member-level model (C-72)"
+      },
+      "since": "2026-10-02",
+      "depends_on": [],
+      "hub_uses": "none called: the hub lands restricted pages with gbrain capture into source restricted, and this keeps them out of facts, people and company pages (C-72, add-restricted-content, finding 9)",
+      "tests": [
+        "test/restricted-no-derive.test.ts"
+      ]
+    },
+    {
+      "id": "remember-resolves-entity",
+      "branch": "upstream/remember-resolves-entity",
+      "what": "remember resolves its entity through the entity verb's resolution (alias > exact slug > exact title > slug-suffix; a title or suffix match only on a person, company, organization, entity or project page), then the facts resolver's name arms, and refuses an entity that matches no page (not_found, entity_not_found, nearest pages in the suggestion and as JSON in detail) instead of filing the fact under a slug no page has; entity's miss suggestions put title and slug matches (resolve_slugs, plus the last slug segment) ahead of content matches",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-06",
+        "note": "carried patch, not offered upstream yet: upstream master (v0.60.65.0) still files an explicit pageless entity database-only with no warning (persistence/memory-mutations.ts planRememberTarget), so it is upstream-bound once Neel decides"
+      },
+      "since": "2026-10-06",
+      "depends_on": [],
+      "hub_uses": "remember: every connected agent's remember call; hub writers ingest/dated-facts-store.ts, serve/onboarding/complete.ts and serve/research-tools.ts pass slugs of pages that exist, serve/attribution-tools.ts copies the corrected fact's entity",
+      "tests": [
+        "test/remember-entity-resolution.test.ts",
+        "test/memory-verbs-conformance.test.ts"
+      ]
+    },
+    {
+      "id": "put-page-usage",
+      "branch": "upstream/put-page-usage",
+      "what": "put_page (and capture, which delegates to it) returns outcome (created | updated | unchanged), embed_tokens and embed_cost_usd for the indexing the write caused, and serve-http's success insert merges those three into the mcp_request_log row's params; status is unchanged and params was already jsonb, so no migration. embed_tokens is the engine's per-chunk estimate (content_chunks.token_count), priced at the configured embedding model's rate",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-06",
+        "note": "carried patch, not offered upstream: the request-log usage fields serve Cosmic's usage ledger"
+      },
+      "since": "2026-10-06",
+      "depends_on": [],
+      "hub_uses": "none called yet: the hub's usage ledger reads mcp_request_log.params outcome/embed_tokens/embed_cost_usd once its engine pin moves (cosmic-hub #1477, decision 1)",
+      "tests": [
+        "test/put-page-usage.test.ts"
+      ]
+    },
+    {
+      "id": "capture-receipt-usage",
+      "branch": "upstream/capture-receipt-usage",
+      "what": "the `gbrain capture --json` receipt carries put_page's usage fields (outcome created | updated | unchanged, embed_tokens, embed_cost_usd), on the local and thin-client paths, absent when put_page did not report them; a CLI capture writes no mcp_request_log row, so this is how a CLI caller sees them",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-07",
+        "note": "carried patch, not offered upstream: it serves Cosmic's usage ledger, and depends on put-page-usage, which is carried too"
+      },
+      "since": "2026-10-07",
+      "depends_on": [
+        "put-page-usage"
+      ],
+      "hub_uses": "none called yet: the hub's ingest (ingest/gbrain.ts cliFrontDoors().capture) reads outcome and embed_cost_usd from the receipt once its engine pin moves (cosmic-hub #1477, the ingest indexing cost)",
+      "tests": [
+        "test/capture-receipt-usage.test.ts"
+      ]
+    },
+    {
       "id": "mcp-phase-tag",
       "branch": "upstream/mcp-phase-tag",
       "what": "model calls an MCP client originated log chat_usage_log phase mcp:<client>:<operation>, which records where the call came from; an inner explicit phase keeps its name; facts-queue jobs keep the queueing caller's phase, so extraction queued by put_page logs as mcp:<client>:put_page",
@@ -231,6 +418,14 @@
     {
       "path": "test/effective-date-contract.test.ts",
       "why": "the frontmatter date keys are a contract (cosmic-engine #12)"
+    },
+    {
+      "path": "test/raw-data-source-pair.test.ts",
+      "why": "raw data resolves by (source_id, slug) and never falls back to another source's page: a contract the restricted source relies on (C-72, finding 3)"
+    },
+    {
+      "path": "test/member-read-sweep.test.ts",
+      "why": "every read op, as a member-level client, shows nothing from restricted or founders in any answer or count: the sweep the restricted source relies on (C-72, finding 8)"
     },
     {
       "path": "src/cosmic/brand.ts",

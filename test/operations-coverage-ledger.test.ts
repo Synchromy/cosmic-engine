@@ -130,6 +130,7 @@ const LEDGER: Record<string, string> = {
   context_pack: 'test/ambient-recall.test.ts',
   delta: 'test/ambient-recall.test.ts',
   forget_fact: 'test/e2e/facts-forget.test.ts',
+  delete_fact: 'test/delete-fence-fact.test.ts',
   find_contradictions: 'test/eval-contradictions-integrations.test.ts',
   find_experts: 'test/find-experts-op.test.ts',
   find_trajectory: 'test/operations-find-trajectory.test.ts',

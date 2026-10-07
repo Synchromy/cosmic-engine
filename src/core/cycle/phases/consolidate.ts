@@ -26,6 +26,7 @@ import type { BrainEngine, FactRow } from '../../engine.ts';
 import type { PhaseResult } from '../../cycle.ts';
 import { cosineSimilarity } from '../../facts/classify.ts';
 import { isAborted } from '../../abort-check.ts';
+import { NO_DERIVE_SOURCE_IDS } from '../../restricted-no-derive.ts';
 
 export interface ConsolidatePhaseOpts {
   dryRun?: boolean;
@@ -61,6 +62,8 @@ export async function runPhaseConsolidate(
 
   // Pull every (source_id, entity_slug) bucket of unconsolidated facts.
   // Uses the partial idx_facts_unconsolidated index.
+  // Cosmic restricted-no-derive: a brain-wide cycle scans every source here,
+  // so member-hidden sources are left out of the scan itself.
   let buckets: Array<{ source_id: string; entity_slug: string; count: number }>;
   try {
     buckets = await engine.executeRaw<{
@@ -72,9 +75,10 @@ export async function runPhaseConsolidate(
         AND expired_at IS NULL
         AND (valid_until IS NULL OR valid_until > now())
         AND entity_slug IS NOT NULL
+        AND source_id <> ALL($1::text[])
       GROUP BY source_id, entity_slug
       HAVING COUNT(*) >= ${minPerBucket}
-    `);
+    `, [[...NO_DERIVE_SOURCE_IDS]]);
   } catch (err) {
     return {
       phase: 'consolidate',

@@ -49,6 +49,50 @@ const PROBES: Record<string, () => void> = {
   'ops-expose-what-the-engine-can-do': () => {
     expect(existsSync('test/ops-expose-what-the-engine-can-do.test.ts')).toBe(true);
   },
+  'delete-fence-fact': () => {
+    expect(operationsByName.delete_fact).toBeDefined();
+    expect(operationsByName.delete_fact.params.provenance?.required).toBe(true);
+  },
+  'embed-outage-defer': () => {
+    expect(existsSync('src/core/embed-outage.ts')).toBe(true);
+    expect(readFileSync('src/core/ops/pages.ts', 'utf8')).toContain('deferOnEmbedOutage: !noEmbed');
+    expect(readFileSync('src/commands/embed.ts', 'utf8')).toContain("args.includes('--waiting')");
+  },
+  'restricted-write-guard': () => {
+    expect(existsSync('src/core/restricted-write-guard.ts')).toBe(true);
+    expect(readFileSync('src/core/ops/pages.ts', 'utf8')).toContain('assertNoRestrictedTwin(');
+  },
+  'restricted-advisor': () => {
+    expect(existsSync('src/core/restricted-advisor.ts')).toBe(true);
+    expect(readFileSync('src/core/ops/skills-catalog.ts', 'utf8')).toContain('assertAdvisorReadsWholeBrain(');
+  },
+  'move-source': () => {
+    expect(existsSync('src/core/move-source.ts')).toBe(true);
+    expect(readFileSync('src/commands/pages.ts', 'utf8')).toContain("'move-source'");
+  },
+  'link-sources-both-endpoints': () => {
+    for (const f of ['src/core/pglite-engine.ts', 'src/core/postgres-engine.ts']) {
+      expect(readFileSync(f, 'utf8')).toContain('cosmic patch link-sources-both-endpoints');
+    }
+  },
+  'restricted-no-derive': () => {
+    expect(existsSync('src/core/restricted-no-derive.ts')).toBe(true);
+    expect(readFileSync('src/core/facts/backstop.ts', 'utf8')).toContain('derivesFrom(ctx.sourceId)');
+  },
+  'remember-resolves-entity': () => {
+    expect(existsSync('src/core/verbs/remember-entity.ts')).toBe(true);
+    expect(readFileSync('src/core/verbs.ts', 'utf8')).toContain('resolveRememberEntity(');
+    expect(readFileSync('src/core/verbs/entity-card.ts', 'utf8')).toContain('nameMatchSuggestions(');
+  },
+  'put-page-usage': () => {
+    expect(existsSync('src/core/put-page-usage.ts')).toBe(true);
+    expect(readFileSync('src/core/ops/pages.ts', 'utf8')).toContain('...putPageUsage(result)');
+    expect(readFileSync('src/commands/serve-http.ts', 'utf8')).toContain('requestLogParamsWithUsage(name, logParamsObj, toolResult)');
+  },
+  'capture-receipt-usage': () => {
+    expect(readFileSync('src/commands/capture.ts', 'utf8')).toContain('...captureUsageOf(result)');
+    expect(readFileSync('src/commands/capture.ts', 'utf8')).toContain('...captureUsageOf(remoteResult)');
+  },
   'mcp-phase-tag': () => {
     expect(readFileSync('src/mcp/dispatch.ts', 'utf8')).toContain('withChatPhase(mcpChatPhase(ctx.auth, name), run)');
   },

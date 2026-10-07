@@ -184,7 +184,8 @@ test('existing database files after an interrupted init do not certify unfinishe
 
 test('separate installed CLI processes remember, recall and forget despite hostile routing', async () => {
   const unique = `installation-canary-${crypto.randomUUID()}`;
-  const remembered = JSON.parse(await launched(['remember', unique, '--provenance', 'hermetic setup test', '--entity', 'projects/setup-test', '--json']));
+  // No --entity: remember refuses an entity with no page, and routing is what this pins.
+  const remembered = JSON.parse(await launched(['remember', unique, '--provenance', 'hermetic setup test', '--json']));
   expect(remembered.status).toBe('inserted');
   expect(await launched(['recall', '--grep', unique, '--json'])).toContain(unique);
   await launched(['forget', String(remembered.id), '--reason', 'setup test complete']);

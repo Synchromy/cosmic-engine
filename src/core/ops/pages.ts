@@ -10,6 +10,7 @@
 import type { BrainEngine } from '../engine.ts';
 import { brandText } from '../../cosmic/brand.ts';
 import { clampSearchLimit } from '../engine.ts';
+import { assertNoRestrictedTwin } from '../restricted-write-guard.ts';
 import type { Page, PageType } from '../types.ts';
 import { importFromContent } from '../import-file.ts';
 import { serializePageToMarkdown } from '../markdown.ts';
@@ -23,6 +24,7 @@ import { isFactsBackstopEligible } from '../facts/eligibility.ts';
 import { sanitizeRemoteBody } from '../remote-body.ts';
 import type { WriterLintPayload } from '../output/post-write.ts';
 import { getContentFlag } from '../quarantine.ts';
+import { putPageUsage } from '../put-page-usage.ts';
 import { bumpLastRetrievedAt } from '../last-retrieved.ts';
 import { resolveExcludePrivatePages, isPrivatePage, findPrivateOnlySlugs } from '../search/private-visibility.ts';
 import { LIST_PAGES_DESCRIPTION, CAPTURE_DESCRIPTION } from '../operations-descriptions.ts';
@@ -381,6 +383,9 @@ const put_page: Operation = {
     if (ctx.viaSubagent === true && ctx.auth) await requireWritablePage(ctx, slug.toLowerCase(), 'put_page', 'page', true);
 
     if (ctx.dryRun) return { dry_run: true, action: 'put_page', slug: p.slug };
+    // Cosmic C-72: no visible twin of a restricted page (after the dry-run
+    // return, which touches no engine).
+    await assertNoRestrictedTwin(ctx, slug, ctx.sourceId ?? 'default', 'put_page');
 
     // Empty-overwrite guard: empty/whitespace-only content over an existing
     // non-empty page is almost always an input-plumbing failure (e.g. a
@@ -463,6 +468,11 @@ const put_page: Operation = {
       }
       result = await importFromContent(ctx.engine, slug, p.content as string, {
         noEmbed,
+        // Cosmic C-19: an embedder outage lands the page waiting, not refused.
+        // One retry, no wait over 3s: the batch ladder's ~2 minutes of 429
+        // backoff outlasts the gateway and the client, which then write again.
+        deferOnEmbedOutage: !noEmbed,
+        embedRetry: { maxRetries: 1, maxDelayMs: 3_000 },
       // v0.42 (#1699): untrusted callers can't smuggle gate-owned frontmatter
       // markers (quarantine/content_flag/embed_skip). Fail-closed — anything
       // not strictly local is remote (matches CV6 / v0.26.9 F7b posture).
@@ -845,12 +855,14 @@ const put_page: Operation = {
       slug: result.slug,
       status: result.status === 'imported' ? 'created_or_updated' : result.status,
       chunks: result.chunks,
+      ...putPageUsage(result),
       // #3984: a skipped/error status without the reason is a silent no-op to
       // MCP callers (e.g. the >5MB size guard returned bare status 'skipped'
       // and the agent had no idea why the page never appeared). Thread
       // importFromContent's error text through. capture delegates here, so
       // it inherits the reason too.
       ...(result.error ? { error: result.error } : {}),
+      ...(result.embedding ? { embedding: result.embedding } : {}),
       ...(chunkSkipReason ? { chunk_skip_reason: chunkSkipReason } : {}),
       ...(autoLinks ? { auto_links: autoLinks } : {}),
       ...(autoTimeline ? { auto_timeline: autoTimeline } : {}),
