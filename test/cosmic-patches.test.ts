@@ -93,6 +93,9 @@ const PROBES: Record<string, () => void> = {
     expect(readFileSync('src/commands/capture.ts', 'utf8')).toContain('...captureUsageOf(result)');
     expect(readFileSync('src/commands/capture.ts', 'utf8')).toContain('...captureUsageOf(remoteResult)');
   },
+  'mcp-phase-tag': () => {
+    expect(readFileSync('src/mcp/dispatch.ts', 'utf8')).toContain('withChatPhase(mcpChatPhase(ctx.auth, name), run)');
+  },
   'cosmic-brand': () => {
     // Every anchor applied; test/cosmic-brand.test.ts is the leak test proper.
     const r = brandCheck('.', true);
