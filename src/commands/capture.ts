@@ -219,6 +219,24 @@ interface CaptureResult {
   path?: string;
   source_kind: string;
   captured_at: string;
+  /** Cosmic carried patch `capture-receipt-usage`: what put_page did and what its indexing cost. */
+  outcome?: 'created' | 'updated' | 'unchanged';
+  embed_tokens?: number;
+  embed_cost_usd?: number;
+}
+
+/**
+ * Cosmic carried patch `capture-receipt-usage` (cosmic-hub #1477): carry
+ * put_page's usage fields (put-page-usage) into the capture receipt, so a
+ * caller that lands pages through the CLI (the hub's ingest, which writes no
+ * mcp_request_log row) can tell new from updated and see the indexing cost.
+ * Absent when put_page did not report them (an older server, a dry run).
+ */
+export function captureUsageOf(r: unknown): Pick<CaptureResult, 'outcome' | 'embed_tokens' | 'embed_cost_usd'> {
+  const o = r && typeof r === 'object' ? (r as Record<string, unknown>) : {};
+  if (o.outcome !== 'created' && o.outcome !== 'updated' && o.outcome !== 'unchanged') return {};
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  return { outcome: o.outcome, embed_tokens: num(o.embed_tokens), embed_cost_usd: num(o.embed_cost_usd) };
 }
 
 function printReceipt(result: CaptureResult, quiet: boolean, json: boolean): void {
@@ -439,6 +457,7 @@ export async function runCapture(engine: BrainEngine | null, args: string[]): Pr
       // root cause of WARN-8's audit-trail labeling problem.
       source_kind: 'capture-cli',
       captured_at: capturedAt,
+      ...captureUsageOf(remoteResult),
     };
     printReceipt(result, parsed.quiet ?? false, parsed.json ?? false);
     return;
@@ -503,6 +522,7 @@ export async function runCapture(engine: BrainEngine | null, args: string[]): Pr
         // CV3: source_kind is the channel taxonomy, NOT the DB source FK.
         source_kind: 'capture-cli',
         captured_at: capturedAt,
+        ...captureUsageOf(result),
       },
       parsed.quiet ?? false,
       parsed.json ?? false,
