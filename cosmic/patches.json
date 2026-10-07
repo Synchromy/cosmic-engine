@@ -334,6 +334,26 @@
       ]
     },
     {
+      "id": "capture-receipt-usage",
+      "branch": "upstream/capture-receipt-usage",
+      "what": "the `gbrain capture --json` receipt carries put_page's usage fields (outcome created | updated | unchanged, embed_tokens, embed_cost_usd), on the local and thin-client paths, absent when put_page did not report them; a CLI capture writes no mcp_request_log row, so this is how a CLI caller sees them",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-07",
+        "note": "carried patch, not offered upstream: it serves Cosmic's usage ledger, and depends on put-page-usage, which is carried too"
+      },
+      "since": "2026-10-07",
+      "depends_on": [
+        "put-page-usage"
+      ],
+      "hub_uses": "none called yet: the hub's ingest (ingest/gbrain.ts cliFrontDoors().capture) reads outcome and embed_cost_usd from the receipt once its engine pin moves (cosmic-hub #1477, the ingest indexing cost)",
+      "tests": [
+        "test/capture-receipt-usage.test.ts"
+      ]
+    },
+    {
       "id": "cosmic-brand",
       "script": "scripts/cosmic-brand.ts",
       "what": "Cosmic's name on what the engine tells a connected agent and the public: handshake, tool descriptions, hints, server and resource names, new credential prefixes (cosmic_). Inert unless COSMIC_BRAND is set",
