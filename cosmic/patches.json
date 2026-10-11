@@ -372,6 +372,25 @@
       ]
     },
     {
+      "id": "tool-annotations",
+      "branch": "upstream/tool-annotations",
+      "what": "every op is served over MCP with ToolAnnotations: a plain title, readOnlyHint from the op's own mutating flag, destructiveHint for writes that delete or irreversibly overwrite, openWorldHint for the few that reach outside the brain; one central table (src/core/ops/tool-annotations.ts) applied in operations.ts, an inline idempotentHint kept",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-11",
+        "note": "no upstream PR yet; upstream-bound, offering it needs a decision"
+      },
+      "since": "2026-10-11",
+      "depends_on": [],
+      "hub_uses": "the connector directory review (cosmic-hub #707): every tool a connected client lists carries a title and the applicable hint",
+      "tests": [
+        "test/mcp-tool-annotations.test.ts",
+        "test/mcp-tool-defs.test.ts"
+      ]
+    },
+    {
       "id": "cosmic-brand",
       "script": "scripts/cosmic-brand.ts",
       "what": "Cosmic's name on what the engine tells a connected agent and the public: handshake, tool descriptions, hints, server and resource names, new credential prefixes (cosmic_). Inert unless COSMIC_BRAND is set",
