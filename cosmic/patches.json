@@ -385,14 +385,16 @@
       "since": "2026-10-11",
       "depends_on": [
         "c1-contained-mutations",
-        "c1-database-canonical"
+        "c1-database-canonical",
+        "ops-expose-what-the-engine-can-do"
       ],
       "hub_uses": "handoffs_list: serve/handoff-tools.ts (cosmic-hub C-137, add-agent-handoffs); add-handoff-delivery (C-138) reuses it for prompt_context",
       "tests": [
         "test/list-pages-with-frontmatter.test.ts",
         "test/memory-verbs-conformance.test.ts",
         "test/operations-source-isolation-matrix.test.ts",
-        "test/remote-privacy-sweep.test.ts"
+        "test/remote-privacy-sweep.test.ts",
+        "test/ops-expose-what-the-engine-can-do.test.ts"
       ]
     },
     {
