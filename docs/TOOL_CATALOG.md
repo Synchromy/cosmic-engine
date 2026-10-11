@@ -4,7 +4,7 @@
 <!-- Regenerate: bun run scripts/generate-tool-catalog.ts -->
 <!-- Freshness-guarded by scripts/check-tool-catalog-fresh.sh (bun run verify). -->
 
-Every non-localOnly operation on the MCP surface: 125 tools across 23 areas. **Starter** marks membership in the ~27-op `starter` surface (`src/mcp/surface.ts`); **Gate** names the config key that must be true before remote callers see/call the op (`gbrain config set <key> true`). What a given token actually sees is further filtered per request by scope, bound-client fence, publish gates, and the per-client surface — see `docs/operations/mcp-surface-runbook.md`. Area names are non-contractual groupings.
+Every non-localOnly operation on the MCP surface: 126 tools across 23 areas. **Starter** marks membership in the ~28-op `starter` surface (`src/mcp/surface.ts`); **Gate** names the config key that must be true before remote callers see/call the op (`gbrain config set <key> true`). What a given token actually sees is further filtered per request by scope, bound-client fence, publish gates, and the per-client surface — see `docs/operations/mcp-surface-runbook.md`. Area names are non-contractual groupings.
 
 ## admin
 
@@ -141,6 +141,7 @@ Every non-localOnly operation on the MCP surface: 125 tools across 23 areas. **S
 | `delta` | MEMORY VERB (v1): "what changed since T" for heartbeats — pages updated after `since` + hot facts newer than `since` + open-thread events after `since`, zero-LLM. | read | yes |  |
 | `entity` | MEMORY VERB (v1): inspect ONE known person/company/project card — zero LLM calls, sub-100ms. | read | yes |  |
 | `forget` | MEMORY VERB (v1): expire a remembered fact by id — the protocol delete verb. | write | yes |  |
+| `list_pages_with_frontmatter` | MEMORY VERB (v1, additive): list the newest pages of one type whose frontmatter holds the given text values, each with its frontmatter and its canonical_revision (pass that to patch_page as base_revision). | read | yes |  |
 | `recall` | MEMORY VERB (v1): retrieve saved facts/snippets — the protocol read verb. | read | yes |  |
 | `remember` | MEMORY VERB (v1): save one fact to durable agent memory — the protocol write verb. | write | yes |  |
 | `synthesize` | [EXPENSIVE / SLOW — makes LLM calls, seconds-to-minutes latency, costs money] MEMORY VERB (v1): answer a broad question using cross-page LLM reasoning with citations and gap analysis. | read | yes |  |

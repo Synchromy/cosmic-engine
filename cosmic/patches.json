@@ -372,6 +372,30 @@
       ]
     },
     {
+      "id": "list-pages-with-frontmatter",
+      "branch": "upstream/list-pages-with-frontmatter",
+      "what": "list_pages_with_frontmatter, an additive read verb: the newest pages of one type whose frontmatter holds given text values, each with its frontmatter and canonical_revision from one canonical snapshot; on the verbs, starter and full surfaces",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-11",
+        "note": "new product surface for the hub's handoff tools; a maintainer call, not offered"
+      },
+      "since": "2026-10-11",
+      "depends_on": [
+        "c1-contained-mutations",
+        "c1-database-canonical"
+      ],
+      "hub_uses": "handoffs_list: serve/handoff-tools.ts (cosmic-hub C-137, add-agent-handoffs); add-handoff-delivery (C-138) reuses it for prompt_context",
+      "tests": [
+        "test/list-pages-with-frontmatter.test.ts",
+        "test/memory-verbs-conformance.test.ts",
+        "test/operations-source-isolation-matrix.test.ts",
+        "test/remote-privacy-sweep.test.ts"
+      ]
+    },
+    {
       "id": "cosmic-brand",
       "script": "scripts/cosmic-brand.ts",
       "what": "Cosmic's name on what the engine tells a connected agent and the public: handshake, tool descriptions, hints, server and resource names, new credential prefixes (cosmic_). Inert unless COSMIC_BRAND is set",
