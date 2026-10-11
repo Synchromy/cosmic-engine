@@ -96,6 +96,12 @@ const PROBES: Record<string, () => void> = {
   'mcp-phase-tag': () => {
     expect(readFileSync('src/mcp/dispatch.ts', 'utf8')).toContain('withChatPhase(mcpChatPhase(ctx.auth, name), run)');
   },
+  'tool-annotations': () => {
+    expect(existsSync('src/core/ops/tool-annotations.ts')).toBe(true);
+    expect(readFileSync('src/core/operations.ts', 'utf8')).toContain('applyToolAnnotations(operations);');
+    expect(operationsByName.put_page.annotations?.destructiveHint).toBe(true);
+    expect(operationsByName.get_page.annotations?.readOnlyHint).toBe(true);
+  },
   'cosmic-brand': () => {
     // Every anchor applied; test/cosmic-brand.test.ts is the leak test proper.
     const r = brandCheck('.', true);

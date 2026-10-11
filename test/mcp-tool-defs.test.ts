@@ -76,15 +76,23 @@ describe('buildToolDefs', () => {
     expect(JSON.stringify(buildToolDefs(operations, { strictParams: false }))).toBe(base);
   });
 
-  test('ops without annotations keep the pre-annotations shape exactly (no annotations key)', () => {
-    const extracted = buildToolDefs(operations);
-    for (const def of extracted) {
-      const op = operations.find(o => o.name === def.name)!;
-      if (!op.annotations) {
-        expect('annotations' in def).toBe(false);
-        expect(Object.keys(def)).toEqual(['name', 'description', 'inputSchema']);
-      }
+  // Before the tool-annotations patch this pinned that ops WITHOUT
+  // annotations keep the pre-annotations shape (no annotations key). Every
+  // op in `operations` now carries annotations (src/core/ops/tool-annotations.ts),
+  // so that branch never ran; the shape is pinned for both cases instead:
+  // every served op has exactly the four keys, and an op list built without
+  // annotations still emits no annotations key at all.
+  test('every op is served with annotations, as the fourth and last key', () => {
+    for (const def of buildToolDefs(operations)) {
+      expect(Object.keys(def)).toEqual(['name', 'description', 'inputSchema', 'annotations']);
     }
+  });
+
+  test('an op without annotations keeps the pre-annotations shape exactly (no annotations key)', () => {
+    const bare = { ...operations[0]!, annotations: undefined };
+    const [def] = buildToolDefs([bare]);
+    expect('annotations' in def!).toBe(false);
+    expect(Object.keys(def!)).toEqual(['name', 'description', 'inputSchema']);
   });
 
   test('preserves operation count', () => {
