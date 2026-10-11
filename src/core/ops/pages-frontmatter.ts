@@ -166,31 +166,30 @@ export const listPagesWithFrontmatterOperation: Operation = {
       ? clampSearchLimit(requestedLimit, 50, Number.MAX_SAFE_INTEGER)
       : clampSearchLimit(requestedLimit, 50, 100);
     // The index rows are the candidates; the canonical bytes decide. A
-    // candidate the canonical bytes no longer match is skipped, so the scan
-    // goes on, a batch at a time, until `limit` rows are answered or the
-    // candidates run out (bounded, so one call reads at most
-    // LIST_PAGES_WITH_FRONTMATTER_MAX_SCAN index rows). A page whose canonical
-    // bytes match but whose index row has not caught up (a patch_page that
-    // answered projection_state: pending) is not a candidate until its
-    // projection lands; that is the one lag this read has.
+    // candidate the canonical bytes no longer match is skipped and the next
+    // one is read, until `limit` rows are answered or the candidates run out.
+    // The candidates come from ONE query (no OFFSET paging, whose batches can
+    // overlap or skip rows that share an updated_at), bounded at
+    // LIST_PAGES_WITH_FRONTMATTER_MAX_SCAN index rows (a trusted local caller
+    // asking for more gets its limit). Canonical bytes are read only until
+    // `limit` rows match. A page whose canonical bytes match but whose index
+    // row has not caught up (a patch_page that answered projection_state:
+    // pending) is not a candidate until its projection lands; that is the one
+    // lag this read has.
+    const scan = Math.max(limit, LIST_PAGES_WITH_FRONTMATTER_MAX_SCAN);
+    const candidates = await ctx.engine.listPages({
+      type: type as PageType,
+      frontmatterEquals: where,
+      limit: isLocal ? scan : LIST_PAGES_WITH_FRONTMATTER_MAX_SCAN,
+      sort: 'updated_desc',
+      excludePrivate,
+      ...scope,
+    });
     const pages: Array<Record<string, unknown>> = [];
-    const batch = Math.max(limit, 50);
-    for (let offset = 0; pages.length < limit && offset < LIST_PAGES_WITH_FRONTMATTER_MAX_SCAN; offset += batch) {
-      const rows = await ctx.engine.listPages({
-        type: type as PageType,
-        frontmatterEquals: where,
-        limit: batch,
-        offset,
-        sort: 'updated_desc',
-        excludePrivate,
-        ...scope,
-      });
-      for (const pg of rows) {
-        if (pages.length >= limit) break;
-        const row = await canonicalRow(ctx.engine, pg, where, excludePrivate);
-        if (row) pages.push(row);
-      }
-      if (rows.length < batch) break;
+    for (const pg of candidates) {
+      if (pages.length >= limit) break;
+      const row = await canonicalRow(ctx.engine, pg, where, excludePrivate);
+      if (row) pages.push(row);
     }
     return { protocol_version: MEMORY_VERBS_VERSION, pages };
   },
