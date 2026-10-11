@@ -172,6 +172,16 @@ describe('list_pages_with_frontmatter', () => {
     expect(open.map((r) => r.slug)).toEqual([]);
   });
 
+  test('a row the canonical bytes drop does not use up the limit: the scan goes on to older rows', async () => {
+    await handoff('handoffs/older-open', { status: 'open' });
+    await handoff('handoffs/newest-closed', { status: 'open' });
+    await engine.executeRaw(`UPDATE pages SET updated_at = now() - interval '1 day' WHERE slug = 'handoffs/older-open'`);
+    const file = join(brainDir, 'handoffs', 'newest-closed.md');
+    writeFileSync(file, readFileSync(file, 'utf8').replace('status: open', 'status: done'));
+    const rows = await list(localCtx(), { type: 'handoff', where: { status: 'open' }, limit: 1 });
+    expect(rows.map((r) => r.slug)).toEqual(['handoffs/older-open']);
+  });
+
   test('canonical bytes unavailable: the row answers canonical_revision null, never a content hash', async () => {
     await handoff('handoffs/no-canonical', { status: 'open' });
     await engine.setConfig('sync.write_through', 'false');

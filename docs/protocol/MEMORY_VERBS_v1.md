@@ -340,7 +340,11 @@ stays 1. The newest pages of one `type` whose frontmatter holds each key in
 `updated_at`. The frontmatter is parsed from the same canonical bytes the
 revision is taken from, so a caller can decide on a row and then call
 `patch_page` with `base_revision: canonical_revision`; a row whose canonical
-bytes no longer match the filter is dropped. When the canonical bytes cannot
+bytes no longer match the filter is dropped, and the scan goes on to older
+rows until `limit` rows match. The index rows are the candidates, so a page
+whose index has not caught up with its canonical bytes (a `patch_page` that
+answered `projection_state: pending`) is listed once its projection lands.
+When the canonical bytes cannot
 be read, `canonical_revision` is `null` (never a content hash) and the row
 carries the index frontmatter. Source scope, private pages and the 100-row
 remote cap are exactly `list_pages`'s.

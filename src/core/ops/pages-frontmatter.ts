@@ -33,6 +33,8 @@ import { assertExplicitSourceLive, federatedSearchScope, parseSourceIdParam } fr
  */
 const LIST_PAGES_WITH_FRONTMATTER_MAX_KEYS = 8;
 const LIST_PAGES_WITH_FRONTMATTER_MAX_VALUE = 500;
+/** Index rows one call may read while skipping rows the canonical bytes no longer match. */
+const LIST_PAGES_WITH_FRONTMATTER_MAX_SCAN = 1000;
 
 function frontmatterMatches(fm: Record<string, unknown>, where: Record<string, string>): boolean {
   for (const [key, value] of Object.entries(where)) {
@@ -81,6 +83,45 @@ function parseFrontmatterWhere(raw: unknown): Record<string, string> {
   return out;
 }
 
+/** One index row as the canonical bytes say it is, or null when they no
+ *  longer carry this type or these values, or the page is now private to an
+ *  untrusted reader. Unreadable canonical bytes answer the index row with
+ *  canonical_revision null. */
+async function canonicalRow(
+  engine: Parameters<typeof readCanonicalPage>[0],
+  pg: { slug: string; source_id: string; title: string; type: string; frontmatter?: unknown; updated_at: unknown },
+  where: Record<string, string>,
+  excludePrivate: boolean,
+): Promise<Record<string, unknown> | null> {
+  let frontmatter: Record<string, unknown> = (pg.frontmatter ?? {}) as Record<string, unknown>;
+  let title = pg.title;
+  let canonicalRevision: string | null = null;
+  let snapshot: Awaited<ReturnType<typeof readCanonicalPage>> | null = null;
+  try {
+    snapshot = await readCanonicalPage(engine, pg.slug, pg.source_id);
+  } catch {
+    snapshot = null;
+  }
+  if (snapshot && snapshot.exists && snapshot.content !== null && snapshot.revision) {
+    const parsed = parseMarkdown(snapshot.content, `${pg.slug}.md`);
+    if (parsed.type !== pg.type) return null;
+    if (!frontmatterMatches(parsed.frontmatter, where)) return null;
+    if (excludePrivate && isPrivatePage(parsed.frontmatter)) return null;
+    frontmatter = parsed.frontmatter;
+    title = parsed.title || pg.title;
+    canonicalRevision = snapshot.revision;
+  }
+  return {
+    slug: pg.slug,
+    source_id: pg.source_id,
+    title,
+    type: pg.type,
+    frontmatter,
+    canonical_revision: canonicalRevision,
+    updated_at: pg.updated_at,
+  };
+}
+
 export const listPagesWithFrontmatterOperation: Operation = {
   name: 'list_pages_with_frontmatter',
   description:
@@ -124,47 +165,32 @@ export const listPagesWithFrontmatterOperation: Operation = {
     const limit = isLocal
       ? clampSearchLimit(requestedLimit, 50, Number.MAX_SAFE_INTEGER)
       : clampSearchLimit(requestedLimit, 50, 100);
-    const rows = await ctx.engine.listPages({
-      type: type as PageType,
-      frontmatterEquals: where,
-      limit,
-      sort: 'updated_desc',
-      excludePrivate,
-      ...scope,
-    });
+    // The index rows are the candidates; the canonical bytes decide. A
+    // candidate the canonical bytes no longer match is skipped, so the scan
+    // goes on, a batch at a time, until `limit` rows are answered or the
+    // candidates run out (bounded, so one call reads at most
+    // LIST_PAGES_WITH_FRONTMATTER_MAX_SCAN index rows). A page whose canonical
+    // bytes match but whose index row has not caught up (a patch_page that
+    // answered projection_state: pending) is not a candidate until its
+    // projection lands; that is the one lag this read has.
     const pages: Array<Record<string, unknown>> = [];
-    for (const pg of rows) {
-      let frontmatter: Record<string, unknown> = (pg.frontmatter ?? {}) as Record<string, unknown>;
-      let title = pg.title;
-      let canonicalRevision: string | null = null;
-      let snapshot: Awaited<ReturnType<typeof readCanonicalPage>> | null = null;
-      try {
-        snapshot = await readCanonicalPage(ctx.engine, pg.slug, pg.source_id);
-      } catch {
-        snapshot = null;
-      }
-      if (snapshot && snapshot.exists && snapshot.content !== null && snapshot.revision) {
-        const parsed = parseMarkdown(snapshot.content, `${pg.slug}.md`);
-        // The canonical bytes are the truth: a row whose canonical file no
-        // longer carries this type or these values is not answered from the
-        // index, and a page made private since the index row was written is
-        // hidden from an untrusted reader.
-        if (parsed.type !== pg.type) continue;
-        if (!frontmatterMatches(parsed.frontmatter, where)) continue;
-        if (excludePrivate && isPrivatePage(parsed.frontmatter)) continue;
-        frontmatter = parsed.frontmatter;
-        title = parsed.title || pg.title;
-        canonicalRevision = snapshot.revision;
-      }
-      pages.push({
-        slug: pg.slug,
-        source_id: pg.source_id,
-        title,
-        type: pg.type,
-        frontmatter,
-        canonical_revision: canonicalRevision,
-        updated_at: pg.updated_at,
+    const batch = Math.max(limit, 50);
+    for (let offset = 0; pages.length < limit && offset < LIST_PAGES_WITH_FRONTMATTER_MAX_SCAN; offset += batch) {
+      const rows = await ctx.engine.listPages({
+        type: type as PageType,
+        frontmatterEquals: where,
+        limit: batch,
+        offset,
+        sort: 'updated_desc',
+        excludePrivate,
+        ...scope,
       });
+      for (const pg of rows) {
+        if (pages.length >= limit) break;
+        const row = await canonicalRow(ctx.engine, pg, where, excludePrivate);
+        if (row) pages.push(row);
+      }
+      if (rows.length < batch) break;
     }
     return { protocol_version: MEMORY_VERBS_VERSION, pages };
   },
