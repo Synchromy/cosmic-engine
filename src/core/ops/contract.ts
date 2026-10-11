@@ -460,6 +460,15 @@ export interface OperationContext {
   localFederatedSourceIds?: string[];
 }
 
+/** MCP ToolAnnotations (MCP spec 2025-03-26 and later). Every key is a hint. */
+export interface ToolAnnotations {
+  title?: string;
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+}
+
 export interface Operation {
   name: string;
   description: string;
@@ -519,14 +528,11 @@ export interface Operation {
   agentCallable?: true;
   /**
    * MCP ToolAnnotations passthrough (SDK 1.29+). Emitted by buildToolDefs
-   * ONLY when set — existing tools keep byte-identical definitions.
+   * ONLY when set. operations.ts sets it on every op from the central table
+   * in ops/tool-annotations.ts (title, readOnly/destructive/openWorld hints);
+   * an inline value contributes only its idempotentHint.
    */
-  annotations?: {
-    title?: string;
-    readOnlyHint?: boolean;
-    destructiveHint?: boolean;
-    idempotentHint?: boolean;
-  };
+  annotations?: ToolAnnotations;
   cliHints?: {
     name?: string;
     /**

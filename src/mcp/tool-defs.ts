@@ -11,15 +11,17 @@ export interface McpToolDef {
     additionalProperties?: false;
   };
   /**
-   * MCP ToolAnnotations (SDK 1.29+), emitted ONLY when the op defines them —
-   * existing tools keep byte-identical definitions (the byte-equality
-   * regression test depends on absent keys staying absent).
+   * MCP ToolAnnotations (SDK 1.29+), emitted ONLY when the op defines them
+   * (the byte-equality regression test depends on absent keys staying
+   * absent). Every op in `operations` defines them since the tool-annotations
+   * patch (src/core/ops/tool-annotations.ts); an ad hoc op list may not.
    */
   annotations?: {
     title?: string;
     readOnlyHint?: boolean;
     destructiveHint?: boolean;
     idempotentHint?: boolean;
+    openWorldHint?: boolean;
   };
 }
 

@@ -112,6 +112,7 @@ import { chronicleOperations } from './ops/chronicle.ts';
 import { extractionOperations } from './ops/extraction.ts';
 import { entityIdentityOperations } from './ops/entity-identity.ts';
 import { requestToolsOperations } from './ops/request-tools.ts';
+import { applyToolAnnotations } from './ops/tool-annotations.ts';
 
 // parseTtlParam moved to ops/facts.ts with the facts cluster; the `remember`
 // verb (verbs.ts) loads it from THIS module at runtime — re-exported so every
@@ -315,6 +316,8 @@ for (const op of operations) {
     op.area = OP_AREAS[op.name];
   }
 }
+// MCP ToolAnnotations on every op: central table in ops/tool-annotations.ts.
+applyToolAnnotations(operations);
 
 export const operationsByName = Object.fromEntries(
   operations.map(op => [op.name, op]),
