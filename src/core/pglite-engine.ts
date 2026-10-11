@@ -2112,6 +2112,13 @@ export class PGLiteEngine implements BrainEngine {
       params.push(filters.effective_before);
       where.push(`p.effective_date <= $${params.length}::timestamptz`);
     }
+    // list_pages_with_frontmatter: one bound `->>` equality per key.
+    for (const [key, value] of Object.entries(filters?.frontmatterEquals ?? {})) {
+      params.push(key);
+      const keyIdx = params.length;
+      params.push(value);
+      where.push(`p.frontmatter->>($${keyIdx}::text) = $${params.length}::text`);
+    }
 
     const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
     params.push(limit, offset);

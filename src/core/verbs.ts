@@ -32,7 +32,11 @@ export const MEMORY_VERBS_VERSION = 1;
 // verbs. The wire protocol_version STAYS 1 (additive) — MEMORY_VERBS_VERSION is
 // unchanged so the five existing schemas + handlers keep stamping 1 and their
 // conformance assertions (protocol_version === 1) hold.
-export const VERB_NAMES = ['recall', 'remember', 'entity', 'synthesize', 'forget', 'context_pack', 'delta'] as const;
+// Synchromy carried patch (cosmic-hub C-137): list_pages_with_frontmatter is
+// an additive eighth verb, so a Read-level client on the `verbs` surface can
+// list pages of a type by frontmatter with their canonical revisions. The
+// wire protocol_version stays 1, as when context_pack and delta were added.
+export const VERB_NAMES = ['recall', 'remember', 'entity', 'synthesize', 'forget', 'context_pack', 'delta', 'list_pages_with_frontmatter'] as const;
 export type VerbName = (typeof VERB_NAMES)[number];
 
 /**
@@ -796,6 +800,29 @@ export const RESPONSE_SCHEMAS: Record<VerbName, Record<string, unknown>> = {
       budget_tokens: { type: 'integer' },
       budget_used: { type: 'integer' },
       dropped_count: { type: 'integer' },
+    },
+  },
+  list_pages_with_frontmatter: {
+    type: 'object',
+    required: ['protocol_version', 'pages'],
+    properties: {
+      protocol_version: { type: 'integer', const: MEMORY_VERBS_VERSION },
+      pages: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['slug', 'source_id', 'title', 'type', 'frontmatter', 'canonical_revision', 'updated_at'],
+          properties: {
+            slug: { type: 'string' },
+            source_id: { type: 'string' },
+            title: { type: 'string' },
+            type: { type: 'string' },
+            frontmatter: { type: 'object', description: 'Parsed from the same canonical bytes as canonical_revision (the index row when those bytes cannot be read).' },
+            canonical_revision: { type: ['string', 'null'], description: 'sha256:<hex> exact canonical revision for patch_page base_revision; null when the canonical bytes cannot be read.' },
+            updated_at: { type: 'string' },
+          },
+        },
+      },
     },
   },
 };
