@@ -182,6 +182,12 @@ describe('list_pages_with_frontmatter', () => {
     expect(rows.map((r) => r.slug)).toEqual(['handoffs/older-open']);
   });
 
+  test('a YAML date matches the value the index holds for it', async () => {
+    await handoff('handoffs/dated', { status: 'open', due: '2026-10-12' });
+    const rows = await list(localCtx(), { type: 'handoff', where: { due: '2026-10-12T00:00:00.000Z' } });
+    expect(rows.map((r) => r.slug)).toEqual(['handoffs/dated']);
+  });
+
   test('canonical bytes unavailable: the row answers canonical_revision null, never a content hash', async () => {
     await handoff('handoffs/no-canonical', { status: 'open' });
     await engine.setConfig('sync.write_through', 'false');

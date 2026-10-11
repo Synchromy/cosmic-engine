@@ -347,7 +347,8 @@ whose index has not caught up with its canonical bytes (a `patch_page` that
 answered `projection_state: pending`) is listed once its projection lands.
 When the canonical bytes cannot
 be read, `canonical_revision` is `null` (never a content hash) and the row
-carries the index frontmatter. Source scope, private pages and the 100-row
+carries the index frontmatter. A YAML date is matched as the full ISO
+timestamp the index stores (`2026-10-12T00:00:00.000Z`). Source scope, private pages and the 100-row
 remote cap are exactly `list_pages`'s.
 
 Response: `{ protocol_version, pages[] }`.

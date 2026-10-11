@@ -40,6 +40,12 @@ function frontmatterMatches(fm: Record<string, unknown>, where: Record<string, s
   for (const [key, value] of Object.entries(where)) {
     const actual = fm[key];
     if (actual === undefined || actual === null || typeof actual === 'object' && !(actual instanceof Date)) return false;
+    // A YAML date is a Date here and a full ISO timestamp in the index row
+    // (`frontmatter->>key`), so a filter that matched the index matches here.
+    if (actual instanceof Date) {
+      if (value !== actual.toISOString() && value !== coerceFrontmatterString(actual)) return false;
+      continue;
+    }
     if (coerceFrontmatterString(actual) !== value) return false;
   }
   return true;
