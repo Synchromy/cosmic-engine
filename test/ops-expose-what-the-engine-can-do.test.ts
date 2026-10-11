@@ -59,6 +59,7 @@ describe('an op exposes what the engine can do', () => {
     updated_after_keyset: 'pagination cursor, assembled by the delta verb, not asked for',
     source_ids:           'resolved from the caller auth scope; a caller naming it would widen its own grant',
     exclude_private:      'THE privacy predicate. Caller-controllable would make private pages requestable',
+    frontmatter_equals:   'reached as list_pages_with_frontmatter\'s `where` (cosmic patch list-pages-with-frontmatter)',
   };
 
   test('every PageFilters field is reachable from some op, or listed as internal with a reason', () => {
