@@ -91,11 +91,12 @@ beforeEach(async () => {
 });
 
 describe('protocol additivity (P1 fix)', () => {
-  test('MEMORY_VERBS_VERSION stays 1 with 7 frozen verbs', () => {
+  test('MEMORY_VERBS_VERSION stays 1 with 8 verbs (7 upstream + the carried list_pages_with_frontmatter)', () => {
     expect(MEMORY_VERBS_VERSION).toBe(1);
     expect(VERB_NAMES).toContain('context_pack');
     expect(VERB_NAMES).toContain('delta');
-    expect(VERB_NAMES.length).toBe(7);
+    expect(VERB_NAMES).toContain('list_pages_with_frontmatter');
+    expect(VERB_NAMES.length).toBe(8);
   });
 
   test('context_pack + delta are verbs on the surface, scope read', () => {

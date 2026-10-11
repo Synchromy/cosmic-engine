@@ -232,6 +232,7 @@ const OP_AREAS: Record<string, string> = {
   recall: 'memory-verbs', remember: 'memory-verbs', entity: 'memory-verbs',
   synthesize: 'memory-verbs', forget: 'memory-verbs',
   context_pack: 'memory-verbs', delta: 'memory-verbs',
+  list_pages_with_frontmatter: 'memory-verbs',
   // pages (CRUD, versions, raw payloads, resolution)
   get_page: 'pages', put_page: 'pages', patch_page: 'pages', delete_page: 'pages', list_pages: 'pages',
   restore_page: 'pages', purge_deleted_pages: 'pages',

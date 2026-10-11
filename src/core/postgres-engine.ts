@@ -1082,6 +1082,12 @@ export class PostgresEngine implements BrainEngine {
     const effectiveBeforeCondition = filters?.effective_before
       ? sql`AND p.effective_date <= ${filters.effective_before}::timestamptz`
       : sql``;
+    // list_pages_with_frontmatter: one bound `->>` equality per key.
+    const frontmatterEntries = Object.entries(filters?.frontmatterEquals ?? {});
+    const frontmatterCondition = frontmatterEntries.reduce(
+      (acc, [key, value]) => sql`${acc} AND p.frontmatter->>(${key}::text) = ${value}::text`,
+      sql``,
+    );
 
     // v0.29: ORDER BY threading via PAGE_SORT_SQL whitelist (no SQL injection).
     // postgres.js sql.unsafe lets us splice the literal fragment safely.
@@ -1095,7 +1101,7 @@ export class PostgresEngine implements BrainEngine {
       const rows = await tx`
         SELECT p.*, to_char(p.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at_iso FROM pages p
         ${tagJoin}
-        WHERE 1=1 ${typeCondition} ${tagCondition} ${updatedCondition} ${slugCondition} ${sourceCondition} ${deletedCondition} ${privateCondition} ${effectiveAfterCondition} ${effectiveBeforeCondition}
+        WHERE 1=1 ${typeCondition} ${tagCondition} ${updatedCondition} ${slugCondition} ${sourceCondition} ${deletedCondition} ${privateCondition} ${effectiveAfterCondition} ${effectiveBeforeCondition} ${frontmatterCondition}
         ORDER BY ${orderBy} LIMIT ${limit} OFFSET ${offset}
       `;
       return rows.map(rowToPage);

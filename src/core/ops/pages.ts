@@ -26,6 +26,7 @@ import { bumpLastRetrievedAt } from '../last-retrieved.ts';
 import { resolveExcludePrivatePages, isPrivatePage, findPrivateOnlySlugs } from '../search/private-visibility.ts';
 import { LIST_PAGES_DESCRIPTION, CAPTURE_DESCRIPTION } from '../operations-descriptions.ts';
 import { OperationError } from './contract.ts';
+import { listPagesWithFrontmatterOperation } from './pages-frontmatter.ts';
 import type { Operation, OperationContext } from './contract.ts';
 import { assertC1CreateAdmissible, deletePageOperationHandler, isC1ContainmentEnabled, isC1RevisionGuardEnabled, patchPageOperation, restorePageOperationHandler } from './pages-c1.ts';
 import {
@@ -1423,4 +1424,5 @@ export const pagesOperations: Operation[] = [
   get_page, put_page, patchPageOperation, delete_page, list_pages,
   restore_page, purge_deleted_pages, capture,
   fetch_page,
+  listPagesWithFrontmatterOperation,
 ];
