@@ -399,7 +399,7 @@
     },
     {
       "id": "purge-page-in-source",
-      "branch": "upstream/purge-page-in-source",
+      "branch": "v050/purge-page-in-source",
       "what": "purge_page { slug, source_id }: hard-deletes one page row in one named source, live or soft-deleted, with its chunks, versions, links and timeline (FK cascades); source_id required with no default; admin scope, local only; a missing row answers removed: 0",
       "state": "permanent",
       "upstream": {
@@ -410,7 +410,7 @@
       },
       "since": "2026-10-12",
       "depends_on": [],
-      "hub_uses": "placeCopy removes a Beam page's copy from the source it must not be in (C-114, add-beam-access), through gb.call('purge_page', …, { source }); not yet written",
+      "hub_uses": "purge_page: serve/beam-access.ts placeCopy removes a Beam page's copy from the source it must not be in (C-114, add-beam-access), through gb.call('purge_page', …, { source }); not yet written",
       "tests": [
         "test/purge-page-in-source.test.ts"
       ]
