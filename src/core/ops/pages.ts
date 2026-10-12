@@ -1184,6 +1184,31 @@ const purge_deleted_pages: Operation = {
   cliHints: { name: 'purge-deleted' },
 };
 
+const purge_page: Operation = {
+  name: 'purge_page',
+  description: 'Admin-only hard-delete of one page row at (source_id, slug), whether live or soft-deleted. Cascades through its chunks, versions, links, and timeline with no recovery window. Local CLI only; a missing row returns removed: 0.',
+  params: {
+    slug: { type: 'string', required: true, description: 'Slug of the page to permanently remove.' },
+    source_id: { type: 'string', required: true, description: 'Source holding the page to permanently remove. Required; never defaults to ctx.sourceId or default.' },
+  },
+  mutating: true,
+  scope: 'admin',
+  localOnly: true,
+  handler: async (ctx, p) => {
+    const slug = p.slug as string;
+    const sourceId = p.source_id;
+    if (typeof sourceId !== 'string' || sourceId.trim() === '') {
+      throw new OperationError('invalid_params', 'purge_page requires a non-empty source_id.');
+    }
+    if (ctx.dryRun) return { dry_run: true, action: 'purge_page', slug, source_id: sourceId };
+    const page = await ctx.engine.getPage(slug, { sourceId, includeDeleted: true });
+    if (!page) return { removed: 0 };
+    await ctx.engine.deletePage(slug, { sourceId });
+    return { removed: 1 };
+  },
+  cliHints: { name: 'purge-page', positional: ['slug'] },
+};
+
 const LIST_PAGES_SORT_VALUES = ['updated_desc', 'updated_asc', 'created_desc', 'slug'] as const;
 type ListPagesSort = typeof LIST_PAGES_SORT_VALUES[number];
 
@@ -1457,6 +1482,6 @@ const capture: Operation = {
 // page-level soft-delete recovery + admin purge, then capture.)
 export const pagesOperations: Operation[] = [
   get_page, put_page, patchPageOperation, appendPageEventOperation, delete_page, list_pages,
-  restore_page, purge_deleted_pages, capture,
+  restore_page, purge_deleted_pages, purge_page, capture,
   fetch_page,
 ];
