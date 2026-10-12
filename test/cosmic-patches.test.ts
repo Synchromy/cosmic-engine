@@ -103,6 +103,11 @@ const PROBES: Record<string, () => void> = {
     expect(op.params.type?.required).toBe(true);
     expect(op.params.where?.type).toBe('object');
   },
+  'purge-page-in-source': () => {
+    const src = readFileSync('src/core/ops/pages.ts', 'utf8');
+    expect(src).toContain("name: 'purge_page'");
+    expect(src).toContain('ctx.engine.deletePage(slug, { sourceId })');
+  },
   'cosmic-brand': () => {
     // Every anchor applied; test/cosmic-brand.test.ts is the leak test proper.
     const r = brandCheck('.', true);
