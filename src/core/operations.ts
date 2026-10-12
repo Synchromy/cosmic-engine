@@ -128,7 +128,7 @@ export const operations: Operation[] = [
   // Spread first so `--surface verbs` agents see them at the top of the list.
   ...verbOperations,
   // Page CRUD (get_page, put_page, delete_page, list_pages + the v0.26.5
-  // destructive-guard ops restore_page, purge_deleted_pages) — ops/pages.ts
+  // destructive-guard ops restore_page, purge_deleted_pages, purge_page) — ops/pages.ts
   ...pagesOperations,
   // Search (search, query) — ops/search.ts
   ...searchOperations,
@@ -235,7 +235,7 @@ const OP_AREAS: Record<string, string> = {
   list_pages_with_frontmatter: 'memory-verbs',
   // pages (CRUD, versions, raw payloads, resolution)
   get_page: 'pages', put_page: 'pages', patch_page: 'pages', append_page_event: 'pages', delete_page: 'pages', list_pages: 'pages',
-  restore_page: 'pages', purge_deleted_pages: 'pages',
+  restore_page: 'pages', purge_deleted_pages: 'pages', purge_page: 'pages',
   get_versions: 'pages', revert_version: 'pages',
   resolve_slugs: 'pages', get_chunks: 'pages',
   put_raw_data: 'pages', get_raw_data: 'pages',
