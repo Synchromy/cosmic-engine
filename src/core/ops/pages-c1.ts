@@ -111,6 +111,7 @@ export function assertC1CreateAdmissible(
 /** Safely patch an existing canonical page using exact-byte CAS semantics. */
 export const patchPageOperation: Operation = {
   name: 'patch_page',
+  outputRedaction: 'no_stored_text',
   description: 'Patch existing canonical Markdown using base_revision from get_page. Omitted fields survive; frontmatter_unset explicitly removes keys. Objects and arrays replace atomically. The canonical owner coordinates file publication, projection, recovery and durable request receipts. Retry with the same request_id.',
   params: {
     request_id: WRITE_REQUEST_PARAM,

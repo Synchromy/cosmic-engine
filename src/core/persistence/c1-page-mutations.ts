@@ -31,6 +31,13 @@ export async function assertC1PageAdmission(engine: BrainEngine, sourceId: strin
   if (containment) assertC1CreateAdmissible(content, slug, pack);
 }
 
+/** Repeat the C1 admission gate for ordinary whole-page writes at preparation. */
+export async function assertC1PreparedPageAdmission(engine: BrainEngine, row: WriteRequest, pack?: ParseOpts['activePack']): Promise<void> {
+  if (row.operation === 'capture' || row.operation === 'put_page' && row.intent?.kind === undefined) {
+    await assertC1PageAdmission(engine, row.source_id, row.slug, row.intent!.content as string, pack);
+  }
+}
+
 export async function prepareC1PagePatch(engine: BrainEngine, row: WriteRequest): Promise<PreparedMutation> {
   if (!row.intent) throw new OperationError('storage_error', 'Patch intent is missing.');
   const sourceId = row.source_id;
