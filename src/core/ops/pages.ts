@@ -465,26 +465,43 @@ const list_pages: Operation = {
   outputRedaction: 'retrieval',
   description: LIST_PAGES_DESCRIPTION,
   params: {
-    type: { type: 'string', description: 'Page type.' },
-    tag: { type: 'string', description: 'Tag.' },
-    limit: { type: 'number', description: 'Max rows (default 50; remote max 100).' },
+    type: { type: 'string' },
+    tag: { type: 'string' },
+    limit: { type: 'number', description: 'Max rows.' },
     offset: {
-      type: 'number', description: 'Rows to skip.',
+      type: 'number', description: 'Skip rows.',
     },
     // v0.29 — surface filter that already exists on PageFilters.
     updated_after: {
       type: 'string',
-      description: 'Only pages updated after this ISO time.',
+      description: 'Updated after ISO time.',
     },
     updated_after_slug: {
       type: 'string',
-      description: "Last row's slug (with updated_after).",
+      description: 'Cursor slug.',
+    },
+    // Same move as updated_after above: effective_after/effective_before have
+    // been on PageFilters and implemented in both engines since v0.46.25.0
+    // (055ac6c75, 2026-08-21), with
+    // an index on COALESCE(effective_date, updated_at) put there for them, but
+    // were never surfaced on this tool. An agent could therefore ask when a
+    // page CHANGED but not when its subject HAPPENS, so answering "what is on
+    // next week" meant listing pages and reading each one to find out.
+    effective_after: {
+      type: 'string',
+      description:
+        'Subject date >= ISO date/time; undated excluded.',
+    },
+    effective_before: {
+      type: 'string',
+      description:
+        'Subject date <= ISO date/time; future windows too.',
     },
     sort: {
-      type: 'string', description: 'Default updated_desc.',
+      type: 'string',
       enum: [...LIST_PAGES_SORT_VALUES],
     },
-    include_deleted: { type: 'boolean', description: 'Include soft-deleted pages.' },
+    include_deleted: { type: 'boolean', description: 'Soft-deleted too.' },
     // #4400 — list_pages had no source-scoping param at all: unlike
     // search/query it silently ignored any caller-supplied source and always
     // fell back to whatever federatedSearchScope() resolved from ctx alone,
@@ -575,6 +592,8 @@ const list_pages: Operation = {
       includeDeleted: (p.include_deleted as boolean) === true,
       updated_after: updatedAfterKeyset ? undefined : updatedAfter,
       updatedAfterKeyset,
+      effective_after: typeof p.effective_after === 'string' ? p.effective_after : undefined,
+      effective_before: typeof p.effective_before === 'string' ? p.effective_before : undefined,
       sort,
       excludePrivate,
       listColumnsOnly: true,
@@ -619,6 +638,10 @@ const list_pages: Operation = {
       title: pg.title,
       updated_at: pg.updated_at,
       updated_at_iso: pg.updated_at_iso,
+      // Returned when set, like deleted_at above. A caller that asked for a
+      // window needs to know WHICH day each row falls on; without it the
+      // coming-week answer is a list of titles in no particular order.
+      ...(pg.effective_date ? { effective_date: pg.effective_date } : {}),
       ...(pg.deleted_at ? { deleted_at: pg.deleted_at } : {}),
     }));
   },

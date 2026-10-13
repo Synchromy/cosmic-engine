@@ -46,7 +46,7 @@ export const GET_RECENT_TRANSCRIPTS_DESCRIPTION =
 // ──────────────────────────────────────────────────────────────────────────────
 
 export const LIST_PAGES_DESCRIPTION =
-  "List pages with filters. For 'what's recent / what did I touch this week' use sort=updated_desc. Default 50 rows (remote max 100); a full page may be truncated: continue with updated_after + updated_after_slug from the last row.";
+  "List pages. For 'what did I touch this week': sort=updated_desc. Default 50 (remote max 100). If truncated, continue with last row's updated_at_iso as updated_after + updated_after_slug.";
 
 export const QUERY_DESCRIPTION =
   "Hybrid search plus multi-query expansion for concept or landscape questions (expansion recovers synonym-phrased matches). Still top-K; return_unit returns whole sections or conversations. Lists: list_pages. Exact tokens: `search` is cheaper (no expansion LLM call). Personal: get_recent_salience, find_anomalies; transcripts: `gbrain transcripts recent` on the host. Do NOT assume 'crazy' means impressive (often difficult or emotionally charged). Needs an embedding key (else keyword-only); expansion needs a chat key. fields: \"full\" adds diagnostics.";
