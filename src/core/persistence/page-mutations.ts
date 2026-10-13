@@ -6,6 +6,7 @@ import { realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { OperationContext } from '../ops/contract.ts';
 import { OperationError } from '../ops/contract.ts';
+import { assertNoRestrictedTwin } from '../restricted-write-guard.ts';
 import { VERSION } from '../../version.ts';
 import { ownerBuildMismatch } from './publication-failure.ts';
 import { enforceClientSlugFence, enforceSubagentSlugFence, isLegacyStoredPageSlug, normalizeSlugPrefix, parseSourceIdParam, requireWritablePage, validatePageSlug } from '../ops/context.ts';
@@ -313,6 +314,11 @@ export async function preparePageAdmission(ctx: OperationContext,
   await validateMutationSlug(ctx, input.operation, slug, sourceId);
   enforceClientSlugFence(ctx, slug, input.operation);
   enforceSubagentSlugFence(ctx, slug, input.operation);
+  // C-72: check the resolved slug/source for both content-write entrypoints.
+  // Dry-run adapters return before admission; trusted local writes are exempt.
+  if (input.operation === 'put_page' || input.operation === 'capture') {
+    await assertNoRestrictedTwin(ctx, slug, sourceId, input.operation);
+  }
   // Preserve same-source diagnostics for new timeline writes without making
   // terminal replay depend on a page that may have since been purged.
   if (input.operation === 'add_timeline_entry') await requireWritablePage({ ...ctx, sourceId }, slug, input.operation, 'page');
