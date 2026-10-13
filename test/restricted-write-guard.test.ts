@@ -89,7 +89,8 @@ describe('restricted write guard', () => {
 
   test('allows remote writes targeting restricted itself', async () => {
     await seedRestricted();
-    await putPage.handler(makeCtx({ sourceId: 'restricted' }), { slug: 'deals/acme', content: '# updated restricted' });
+    const snapshot = await engine.readPageSnapshot('deals/acme', { sourceId: 'restricted' });
+    await putPage.handler(makeCtx({ sourceId: 'restricted' }), { slug: 'deals/acme', content: '# updated restricted', expected_revision: snapshot!.revision });
     expect((await engine.getPage('deals/acme', { sourceId: 'restricted' }))!.compiled_truth).toContain('updated restricted');
   });
 
@@ -104,8 +105,10 @@ describe('restricted write guard', () => {
     await addSource('team-x');
     await engine.putPage('notes/shared', { type: 'note', title: 'shared', compiled_truth: 'default original' });
     await engine.putPage('notes/shared', { type: 'note', title: 'shared', compiled_truth: 'team original' }, { sourceId: 'team-x' });
-    await putPage.handler(makeCtx(), { slug: 'notes/shared', content: '# default updated' });
-    await putPage.handler(makeCtx({ sourceId: 'team-x' }), { slug: 'notes/shared', content: '# team updated' });
+    const defaultSnapshot = await engine.readPageSnapshot('notes/shared', { sourceId: 'default' });
+    const teamSnapshot = await engine.readPageSnapshot('notes/shared', { sourceId: 'team-x' });
+    await putPage.handler(makeCtx(), { slug: 'notes/shared', content: '# default updated', expected_revision: defaultSnapshot!.revision });
+    await putPage.handler(makeCtx({ sourceId: 'team-x' }), { slug: 'notes/shared', content: '# team updated', expected_revision: teamSnapshot!.revision });
     expect((await engine.getPage('notes/shared', { sourceId: 'default' }))!.compiled_truth).toContain('default updated');
     expect((await engine.getPage('notes/shared', { sourceId: 'team-x' }))!.compiled_truth).toContain('team updated');
   });
