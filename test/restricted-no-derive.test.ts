@@ -15,6 +15,8 @@ import { operations, type OperationContext } from '../src/core/operations.ts';
 import { derivesFrom } from '../src/core/restricted-no-derive.ts';
 import { resetPgliteState } from './helpers/reset-pglite.ts';
 import { markShortLivedCliProcess, __resetShortLivedCliForTests } from '../src/core/facts/cli-process-mode.ts';
+import { runPersistenceEffects } from '../src/core/persistence/effects.ts';
+import { localHostId } from '../src/core/persistence/identity.ts';
 
 let engine: PGLiteEngine;
 let schemaVersion: string;
@@ -99,6 +101,8 @@ describe('restricted-no-derive: a restricted email about a person adds nothing t
     const before = await janeSnapshot();
 
     await putPage.handler(localCtx('restricted'), { slug: 'emails/jane-terms', content: EMAIL });
+    // Publication records extraction debt; the effect worker dispatches it.
+    await runPersistenceEffects(engine, { engine: 'pglite', embedding_disabled: true }, { hostId: localHostId(), limit: 8 });
 
     expect(await engine.getPage('emails/jane-terms', { sourceId: 'restricted' })).not.toBeNull();
     expect(await jobCount('facts-absorb')).toBe(0);
@@ -112,6 +116,7 @@ describe('restricted-no-derive: a restricted email about a person adds nothing t
 
   test('control: the same put_page in default queues the facts backstop', async () => {
     await putPage.handler(localCtx('default'), { slug: 'emails/jane-terms', content: EMAIL });
+    await runPersistenceEffects(engine, { engine: 'pglite', embedding_disabled: true }, { hostId: localHostId(), limit: 8 });
     expect(await jobCount('facts-absorb')).toBe(1);
   });
 });
