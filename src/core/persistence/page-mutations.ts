@@ -317,6 +317,9 @@ export async function preparePageAdmission(ctx: OperationContext,
   // terminal replay depend on a page that may have since been purged.
   if (input.operation === 'add_timeline_entry') await requireWritablePage({ ...ctx, sourceId }, slug, input.operation, 'page');
   intent.slug = slug;
+  if (input.operation === 'capture' || input.operation === 'put_page' && input.managedFileImport !== true) {
+    await (await import('./c1-page-mutations.ts')).assertC1PageAdmission(ctx.engine, sourceId, slug, intent.content as string);
+  }
   if (ctx.remote !== false) Object.assign(intent, { source_kind: `mcp:${input.operation}`, source_uri: null, ingested_via: `mcp:${input.operation}` });
   const [authority, , snapshot, boundAtStart, writeThroughSetting, repoPath] = await pipelined(ctx.engine, [
     () => submissionAuthority(ctx, input.operation, sourceId, source.incarnation, slug),

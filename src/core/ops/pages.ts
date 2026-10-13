@@ -19,6 +19,8 @@ import { serializePageToMarkdown } from '../markdown.ts';
 import { pageTrustForRead, projectFetchText, projectGetPage, readQuarantined } from './get-page-projection.ts';
 import { MIN_TRUST_PARAM } from '../eligibility/policy.ts';
 import { stampRowTrust } from '../eligibility/stamp.ts';
+import { readCanonicalPage } from '../canonical-page-mutations.ts';
+import { patchPageOperation } from './pages-c1.ts';
 import { isAutoLinkEnabled } from '../link-extraction.ts';
 import { sanitizeRemoteBody } from '../remote-body.ts';
 import { getContentFlag } from '../quarantine.ts';
@@ -198,6 +200,17 @@ const get_page: Operation = {
     const content_flag = getContentFlag(page.frontmatter as Record<string, unknown> | null);
     // #5988: sync holds the page's newer file (one indexed lookup, fail-open).
     const held = (await readHeldPages(ctx.engine, [page.id], ctx).catch(() => null))?.get(page.id);
+    // C1: expose an opaque exact-byte revision for compare-and-swap updates.
+    // It is computed from the full canonical file, not the privacy-filtered
+    // response body and not the semantic content_hash. A missing/unavailable
+    // canonical artifact leaves the field absent rather than making a read
+    // fail (legacy DB-only brains remain readable).
+    let canonicalRevision: string | undefined;
+    try {
+      canonicalRevision = (await readCanonicalPage(ctx.engine, page.slug, page.source_id)).revision ?? undefined;
+    } catch {
+      canonicalRevision = undefined;
+    }
     // #2225: `content` is the canonical serialized markdown (frontmatter +
     // compiled_truth + `<!-- timeline -->` sentinel + timeline). Clients that
     // edit-and-put_page this field round-trip losslessly; hand-concatenating
@@ -217,7 +230,7 @@ const get_page: Operation = {
       ...(timelineEntries ? { timeline_entries: timelineEntries } : {}),
       ...(held ? { file_held: fileHeldField(held, isUntrustedReader) } : {}),
     });
-    return lineGrammar ? { ...projected, line_grammar: lineGrammar } : projected;
+    return { ...projected, ...(canonicalRevision ? { canonical_revision: canonicalRevision } : {}), ...(lineGrammar ? { line_grammar: lineGrammar } : {}) };
   },
   scope: 'read', mutating: false,
   cliHints: { name: 'get', positional: ['slug'] },
@@ -677,7 +690,7 @@ const capture: Operation = {
 // (Page CRUD quartet first, then the v0.26.5 destructive-guard ops:
 // page-level soft-delete recovery + admin purge, then capture.)
 export const pagesOperations: Operation[] = [
-  get_page, put_page, delete_page, list_pages,
+  get_page, put_page, patchPageOperation, delete_page, list_pages,
   restore_page, purge_deleted_pages, capture,
   fetch_page,
 ];
