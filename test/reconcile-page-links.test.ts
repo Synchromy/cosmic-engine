@@ -183,6 +183,23 @@ describe('reconcile_page_links (cosmic-hub #610)', () => {
     expect(trusted.length).toBeGreaterThan(0);
   }, 120000);
 
+  test('a page that changed after it was read is not reconciled from the older text', async () => {
+    await seedTargets();
+    await putRemote('handoffs/2026-10-13-today', HANDOFF);
+    const real = engine.getPage.bind(engine);
+    (engine as any).getPage = async (...a: Parameters<typeof engine.getPage>) => {
+      const p = await real(...a);
+      return p ? { ...p, content_hash: 'an-older-revision' } : p;
+    };
+    try {
+      const r = await run({ slug: 'handoffs/2026-10-13-today', source_id: 'default', read_sources: ['default'] });
+      expect(String(r.auto_links?.error)).toContain('changed while it was being reconciled');
+    } finally {
+      (engine as any).getPage = real;
+    }
+    expect(await outTargets('handoffs/2026-10-13-today')).toEqual([]);
+  }, 120000);
+
   test('dry run counts and writes nothing', async () => {
     await seedTargets();
     await putRemote('handoffs/2026-10-13-today', HANDOFF);

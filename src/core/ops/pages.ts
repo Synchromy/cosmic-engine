@@ -931,10 +931,11 @@ export async function autoLinkWrittenPage(
 }
 
 /** Names the targets, among `slugs`, a remote writer cannot read. Runs its
- *  query through `exec`, the reconcile's own transaction. */
+ *  queries through `exec`, the reconcile's own transaction, and may throw to
+ *  abandon the reconcile (the transaction then writes nothing). */
 export type WithheldTargets = (
   slugs: string[],
-  exec: (sql: string, params: unknown[]) => Promise<Array<{ slug: string }>>,
+  exec: (sql: string, params: unknown[]) => Promise<Array<Record<string, unknown>>>,
 ) => Promise<Set<string>>;
 
 /**
@@ -1107,9 +1108,7 @@ async function runAutoLink(
     let withheldCount = 0;
     if (writer) {
       const named = [...new Set([...out.map(c => c.targetSlug), ...existingOut.map(l => l.to_slug)])];
-      const withheld = named.length > 0
-        ? await writer.withheldTargets(named, (q, params) => tx.executeRaw<{ slug: string }>(q, params))
-        : new Set<string>();
+      const withheld = await writer.withheldTargets(named, (q, params) => tx.executeRaw<Record<string, unknown>>(q, params));
       withheldCount = new Set(out.filter(c => withheld.has(c.targetSlug)).map(c => c.targetSlug)).size;
       out = out.filter(c => !withheld.has(c.targetSlug));
       existingOut = existingOut.filter(l => !withheld.has(l.to_slug));

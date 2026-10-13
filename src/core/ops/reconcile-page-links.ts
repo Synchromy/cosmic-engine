@@ -88,17 +88,29 @@ const reconcile_page_links: Operation = {
     };
 
     const excludePrivate = await resolveExcludePrivatePages(ctx.engine, true);
-    // FOR SHARE: the target rows stay as checked until the reconcile commits.
+    // Inside the reconcile's transaction, after its per-page lock:
+    //  - the page must still be the revision read above, so a reconcile that
+    //    waited behind a newer write never puts back the older text's edges
+    //    (it fails, and the caller retries on the current text);
+    //  - every target row is locked FOR SHARE before its visibility is read,
+    //    so none can turn private before this commits.
     const withheldTargets: WithheldTargets = async (slugs, exec) => {
+      const now = await exec(
+        `SELECT p.content_hash FROM pages p WHERE p.source_id = $1 AND p.slug = $2 FOR SHARE`,
+        [sourceId, slug],
+      );
+      if (now.length === 0 || (now[0].content_hash ?? null) !== (page.content_hash ?? null)) {
+        throw new OperationError('unavailable', `reconcile_page_links: ${slug} changed while it was being reconciled; run it again.`);
+      }
       if (!excludePrivate || slugs.length === 0) return new Set();
       const rows = await exec(
-        `SELECT p.slug FROM pages p
+        `SELECT p.slug, NOT (${privatePagesFilterFragment('p')}) AS private
+           FROM pages p
           WHERE p.source_id = $1 AND p.slug = ANY($2::text[])
-            AND NOT (${privatePagesFilterFragment('p')})
           FOR SHARE`,
         [sourceId, slugs],
       );
-      return new Set(rows.map((r) => r.slug));
+      return new Set(rows.filter((r) => r.private === true).map((r) => String(r.slug)));
     };
 
     let autoLinks: Record<string, unknown>;
