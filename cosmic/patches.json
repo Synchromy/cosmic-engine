@@ -427,7 +427,9 @@
         "note": "not offered: upstream skips remote reconciliation by design and runs the serve sweep instead; this op exists for cosmic-hub's per-writer policy"
       },
       "since": "2026-10-13",
-      "depends_on": [],
+      "depends_on": [
+        "purge-page-in-source"
+      ],
       "hub_uses": "serve/remote-links.ts (cosmic-hub #610): after a remote put_page or capture, the gateway queues the page and the drain calls reconcile_page_links with the writer's write source, read grant and slug fence; bin/reconcile-remote-links.ts backfills pages written before",
       "tests": [
         "test/reconcile-page-links.test.ts",
