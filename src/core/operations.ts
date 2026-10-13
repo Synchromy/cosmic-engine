@@ -112,6 +112,7 @@ import { chronicleOperations } from './ops/chronicle.ts';
 import { extractionOperations } from './ops/extraction.ts';
 import { entityIdentityOperations } from './ops/entity-identity.ts';
 import { requestToolsOperations } from './ops/request-tools.ts';
+import { reconcilePageLinksOperations } from './ops/reconcile-page-links.ts';
 
 // parseTtlParam moved to ops/facts.ts with the facts cluster; the `remember`
 // verb (verbs.ts) loads it from THIS module at runtime — re-exported so every
@@ -213,6 +214,9 @@ export const operations: Operation[] = [
   ...skilloptOperations,
   // v0.47: open-loop engine (who is waiting on you) — ops/loops.ts
   ...loopsOperations,
+  // cosmic-hub #610: host-run link reconciliation for a remote writer's page
+  // (local only) — ops/reconcile-page-links.ts
+  ...reconcilePageLinksOperations,
 ];
 
 // ---------------------------------------------------------------------------
@@ -247,6 +251,7 @@ const OP_AREAS: Record<string, string> = {
   add_link: 'links', remove_link: 'links', get_links: 'links',
   get_backlinks: 'links', list_link_sources: 'links', traverse_graph: 'links',
   find_orphans: 'links',
+  reconcile_page_links: 'links',
   // timeline
   add_timeline_entry: 'timeline', get_timeline: 'timeline',
   // life chronicle
