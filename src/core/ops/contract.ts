@@ -7,6 +7,7 @@
  */
 
 import type { BrainEngine } from '../engine.ts';
+import { brandText } from '../../cosmic/brand.ts';
 import type { GBrainConfig } from '../config.ts';
 import { MEMORY_VERBS_VERSION } from '../verbs.ts';
 
@@ -69,8 +70,8 @@ export class OperationError extends Error {
   toJSON() {
     return {
       error: this.code,
-      message: this.message,
-      suggestion: this.suggestion,
+      message: brandText(this.message),
+      suggestion: this.suggestion === undefined ? undefined : brandText(this.suggestion),
       docs: this.docs,
       detail: this.detail,
       protocol_version: this.protocolVersion,

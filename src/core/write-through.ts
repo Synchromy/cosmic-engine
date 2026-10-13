@@ -32,6 +32,7 @@ import {
   isDurabilityHardened, commitWriteThroughFile, currentBranch, getLastPushOutcome,
   type PushLogOutcome,
 } from './brain-repo-durability.ts';
+import { withPageLock } from './page-lock.ts';
 
 /** Minimal logger surface — structurally compatible with operations.ts `Logger`. */
 export interface WriteThroughLogger {
@@ -97,6 +98,8 @@ export interface WritePageThroughOpts {
   /** Merged over the page's own frontmatter at render time (e.g. provenance). */
   frontmatterOverrides?: Record<string, unknown>;
   logger?: WriteThroughLogger;
+  /** Caller already owns the shared (source, slug) canonical-page lock. */
+  lockAlreadyHeld?: boolean;
 }
 
 /**
@@ -275,6 +278,31 @@ function scannerSourcePath(scanRoot: string, filePath: string): string {
  * path or the fence lands in a file sync never reads back and the next
  * extract_facts reconcile deletes the fence-owned DB rows.
  */
+/**
+ * v0.50's lock hierarchy, for page writers written before it existed: the
+ * SOURCE FILESYSTEM lock first, then whatever page lock `fn` takes.
+ *
+ * v0.50.0.0 made every write into a source directory hold
+ * withSourceFilesystemLock, and its own writers take it BEFORE the page lock
+ * (timeline-write-through.ts, facts/forget.ts). The C1 writers took only the
+ * page lock, then reached the filesystem lock from inside it: the opposite
+ * order, which deadlocks against any v0.50 writer on the same page, and which
+ * recursed into the page lock a second time on put_page and hung (rebasing
+ * the C1 stack onto v0.50, Synchromy/cosmic-hub#692). A page with no file
+ * target (DB-canonical, the hub topology) has nothing on disk to lock.
+ */
+export async function underSourceFilesystemLock<T>(
+  engine: BrainEngine,
+  slug: string,
+  sourceId: string,
+  fn: () => Promise<T>,
+  target?: PageWriteTarget,
+): Promise<T> {
+  const resolved = target ?? await resolvePageWriteTarget(engine, slug, sourceId);
+  if (!resolved.ok || hasSourceFilesystemLock(resolved.writeRoot)) return fn();
+  return withSourceFilesystemLock(engine, resolved.writeRoot, fn);
+}
+
 export async function resolvePageWriteTarget(
   engine: BrainEngine,
   slug: string,
@@ -355,7 +383,7 @@ export async function resolvePageWriteTarget(
  * `skipped` / `error` fields (the DB write is the durable sink; the file is
  * best-effort and reconciled by the next `gbrain sync`).
  */
-export async function writePageThrough(
+async function writePageThroughUnlocked(
   engine: BrainEngine,
   slug: string,
   opts: WritePageThroughOpts = {},
@@ -376,7 +404,7 @@ export async function writePageThrough(
     }
     const { filePath, writeRoot, sourcePathToBind } = target;
     if (!hasSourceFilesystemLock(writeRoot)) {
-      return await withSourceFilesystemLock(engine, writeRoot, () => writePageThrough(engine, slug, opts));
+      return await withSourceFilesystemLock(engine, writeRoot, () => writePageThroughUnlocked(engine, slug, opts));
     }
 
     const writtenPage = await engine.getPage(slug, { sourceId });
@@ -489,6 +517,30 @@ export async function writePageThrough(
   }
 }
 
+/**
+ * Serialize every DB-to-canonical-file rewrite with sparse canonical patches.
+ * Callers that deliberately hold the same lock across an earlier DB mutation
+ * pass `lockAlreadyHeld`; every other caller shares this lock automatically.
+ */
+export async function writePageThrough(
+  engine: BrainEngine,
+  slug: string,
+  opts: WritePageThroughOpts = {},
+): Promise<WriteThroughResult> {
+  if (opts.lockAlreadyHeld) return writePageThroughUnlocked(engine, slug, opts);
+  try {
+    return await underSourceFilesystemLock(engine, slug, opts.sourceId ?? 'default', () => withPageLock(
+      slug,
+      () => writePageThroughUnlocked(engine, slug, opts),
+      { sourceId: opts.sourceId ?? 'default' },
+    ));
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    opts.logger?.warn(`[write-through] failed for ${slug}: ${msg}`);
+    return { written: false, error: msg };
+  }
+}
+
 export interface DeleteThroughResult {
   /** True when an artifact existed and was unlinked. */
   removed: boolean;
@@ -530,10 +582,17 @@ export interface DeleteThroughResult {
  * report a clean `file_not_present` no-op while the REAL artifact stayed on
  * disk — the very silent-no-op class this helper exists to close.
  */
-export async function deletePageThrough(
+type DeletePageThroughOpts = {
+  sourceId?: string;
+  logger?: WriteThroughLogger;
+  target?: PageWriteTarget;
+  lockAlreadyHeld?: boolean;
+};
+
+async function deletePageThroughUnlocked(
   engine: BrainEngine,
   slug: string,
-  opts: { sourceId?: string; logger?: WriteThroughLogger; target?: PageWriteTarget } = {},
+  opts: DeletePageThroughOpts = {},
 ): Promise<DeleteThroughResult> {
   const sourceId = opts.sourceId ?? 'default';
   try {
@@ -546,7 +605,7 @@ export async function deletePageThrough(
     if (!target.ok) return { removed: false, skipped: target.skipped };
     const { filePath } = target;
     if (!hasSourceFilesystemLock(target.writeRoot)) {
-      return await withSourceFilesystemLock(engine, target.writeRoot, () => deletePageThrough(engine, slug, opts));
+      return await withSourceFilesystemLock(engine, target.writeRoot, () => deletePageThroughUnlocked(engine, slug, opts));
     }
 
     if (!existsSync(filePath)) {
@@ -556,6 +615,25 @@ export async function deletePageThrough(
     assertSourceFilesystemActive();
     unlinkSync(filePath);
     return { removed: true, path: filePath };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    opts.logger?.warn(`[write-through] delete failed for ${slug}: ${msg}`);
+    return { removed: false, error: msg };
+  }
+}
+
+export async function deletePageThrough(
+  engine: BrainEngine,
+  slug: string,
+  opts: DeletePageThroughOpts = {},
+): Promise<DeleteThroughResult> {
+  if (opts.lockAlreadyHeld) return deletePageThroughUnlocked(engine, slug, opts);
+  try {
+    return await underSourceFilesystemLock(engine, slug, opts.sourceId ?? 'default', () => withPageLock(
+      slug,
+      () => deletePageThroughUnlocked(engine, slug, opts),
+      { sourceId: opts.sourceId ?? 'default' },
+    ));
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     opts.logger?.warn(`[write-through] delete failed for ${slug}: ${msg}`);

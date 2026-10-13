@@ -72,6 +72,10 @@ export const RATE_LIMIT_JITTER = 0.3;
 
 export interface EmbedBatchWithBackoffOpts {
   abortSignal?: AbortSignal;
+  /** Interactive callers may bound the retry ladder without changing batch defaults. */
+  maxRetries?: number;
+  /** And cap each wait: an unparseable 429 otherwise waits the 60s fallback. */
+  maxDelayMs?: number;
 }
 
 /**
@@ -208,7 +212,8 @@ export async function embedBatchWithBackoff(
   opts: EmbedBatchWithBackoffOpts = {},
 ): Promise<Float32Array[]> {
   const signal = opts.abortSignal;
-  for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt++) {
+  const maxRetries = opts.maxRetries ?? MAX_RATE_LIMIT_RETRIES;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (signal?.aborted) throw new Error('embed budget aborted');
     try {
       // D4a + D8: maxRetries:0 disables the SDK's stacked retries (so this
@@ -232,13 +237,14 @@ export async function embedBatchWithBackoff(
       // #3374 — transient NETWORK blips (socket timeout / conn reset) get a
       // plain bounded backoff beside the 429/gateway retry-after path.
       const netTransient = !rateLimitish && isTransientNetworkEmbedError(e);
-      if ((!rateLimitish && !netTransient) || attempt === MAX_RATE_LIMIT_RETRIES) throw e;
+      if ((!rateLimitish && !netTransient) || attempt === maxRetries) throw e;
 
       // #3796: 429s take the attempt-floored wait (rolling-TPM-aware);
       // network blips keep their own bounded exponential ladder.
-      const delayMs = rateLimitish ? rateLimitDelayMs(msg, attempt) : transientBackoffMs(attempt);
+      const ladderMs = rateLimitish ? rateLimitDelayMs(msg, attempt) : transientBackoffMs(attempt);
+      const delayMs = opts.maxDelayMs !== undefined ? Math.min(ladderMs, opts.maxDelayMs) : ladderMs;
       // One label for every retriable class — 429, gateway and network blips share the loop.
-      serr(`  [embed-retry] attempt ${attempt + 1}/${MAX_RATE_LIMIT_RETRIES}, waiting ${delayMs}ms...`);
+      serr(`  [embed-retry] attempt ${attempt + 1}/${maxRetries}, waiting ${delayMs}ms...`);
       await abortableSleep(delayMs, signal);
     }
   }

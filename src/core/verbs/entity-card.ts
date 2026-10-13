@@ -31,6 +31,8 @@ const EDGE_CAP = 10;
 const OPEN_THREADS_CAP = 3;
 const OPEN_THREAD_TIMELINE_WINDOW_DAYS = 90;
 const SUGGESTION_CAP = 3;
+/** A miss offers more than a hit's runners-up: name matches plus content matches. */
+const NEAR_MISS_CAP = 5;
 const FACT_FETCH_CAP = 100;
 const ENTITY_PAGE_TYPES = new Set(['person', 'company', 'organization', 'entity']);
 
@@ -89,7 +91,7 @@ export interface EntityCardResult {
   suggestions?: EntitySuggestion[];
 }
 
-interface CardPageRow {
+export interface CardPageRow {
   slug: string;
   // v0.43 merge: retrieval-reflex's exported PageRow (safeSynopsis's param)
   // now requires source_id (federated push-context wave #2095). The card row
@@ -108,19 +110,43 @@ const ARM_ALIAS = 0;
 const ARM_EXACT = 1;
 const ARM_SUFFIX = 2;
 
-export async function buildEntityCard(
+/** How the winning page matched the name, strongest first. */
+export type EntityMatchedBy = 'alias' | 'slug' | 'title' | 'slug_suffix';
+
+/** Page types an inferred match (title or slug suffix) may file a fact under. */
+export const ENTITY_SHAPED_TYPES: ReadonlySet<string> = new Set([...ENTITY_PAGE_TYPES, 'project']);
+
+export interface EntityResolution {
+  /** The page the name resolves to, or null on a miss. */
+  best: { slug: string; title: string; type: string | null; matched_by: EntityMatchedBy } | null;
+  /** Other pages the precision arms matched (create_safety 'exists'). */
+  runnersUp: EntitySuggestion[];
+  /** On a miss: the nearest pages, slug and title matches before content matches. */
+  suggestions?: EntitySuggestion[];
+  /** Every precision-arm match in rank order, best first (remember picks the first it may file under). */
+  candidates: Array<{ slug: string; title: string; type: string | null; matched_by: EntityMatchedBy }>;
+  /** Internal: the winning row, so the card is built without a second read. */
+  row?: CardPageRow;
+}
+
+/**
+ * The entity verb's resolution, on its own so `remember` files a fact under
+ * the same page `entity` would show for the same name. Precedence (frozen):
+ * alias > exact slug > exact title > slug-suffix.
+ */
+export async function resolveEntityPage(
   engine: BrainEngine,
   sourceId: string,
   name: string,
   opts: { remote: boolean },
-): Promise<EntityCardResult> {
+): Promise<EntityResolution> {
   const trimmed = (name ?? '').trim();
-  if (!trimmed) return { found: false, suggestions: [] };
+  if (!trimmed) return { best: null, runnersUp: [], suggestions: [], candidates: [] };
 
   // #4352 — untrusted callers never resolve a `visibility: private` page into
   // a card (or a near-miss suggestion). Trust + config gate resolve through
   // the shared helper; local (remote:false) callers are unchanged. Covers
-  // entity, context_pack, and delta (all route through buildEntityCard).
+  // entity, context_pack, delta and remember (all route through here).
   const { resolveExcludePrivatePages, privatePagesFilterFragment } = await import('../search/private-visibility.ts');
   const excludePrivate = await resolveExcludePrivatePages(engine, opts.remote ? undefined : false);
   // Predicate text lives ONCE (private-visibility.ts) — both card queries
@@ -208,28 +234,45 @@ export async function buildEntityCard(
       || lastTouchedMs(b.row) - lastTouchedMs(a.row));
 
   if (candidates.length === 0) {
-    return { found: false, suggestions: await nearMissSuggestions(engine, sourceId, trimmed, excludePrivate) };
+    return { best: null, runnersUp: [], candidates: [], suggestions: await nearMissSuggestions(engine, sourceId, trimmed, excludePrivate) };
   }
 
-  const best = candidates[0];
+  const top = candidates[0];
   const runnersUp: EntitySuggestion[] = candidates.slice(1, 1 + SUGGESTION_CAP).map(c => ({
     slug: c.slug,
     title: c.row.title ?? c.slug,
     // A page that resolved through the precision arms exists by definition.
     create_safety: 'exists',
   }));
+  const matchedBy = (c: { slug: string; rank: number }): EntityMatchedBy =>
+    c.rank === ARM_ALIAS ? 'alias'
+      : c.rank === ARM_SUFFIX ? 'slug_suffix'
+        : exactSlugs.includes(c.slug) ? 'slug' : 'title';
+  const typed = candidates.map(c => ({ slug: c.slug, title: c.row.title ?? c.slug, type: c.row.type, matched_by: matchedBy(c) }));
+  return { best: typed[0], runnersUp, candidates: typed, row: top.row };
+}
 
-  const card = await assembleCard(engine, sourceId, best.row, opts.remote);
+export async function buildEntityCard(
+  engine: BrainEngine,
+  sourceId: string,
+  name: string,
+  opts: { remote: boolean },
+): Promise<EntityCardResult> {
+  const resolution = await resolveEntityPage(engine, sourceId, name, opts);
+  if (!resolution.best || !resolution.row) {
+    return { found: false, suggestions: resolution.suggestions ?? [] };
+  }
+  const card = await assembleCard(engine, sourceId, resolution.row, opts.remote);
   return {
     found: true,
     card,
-    ...(runnersUp.length ? { suggestions: runnersUp } : {}),
+    ...(resolution.runnersUp.length ? { suggestions: resolution.runnersUp } : {}),
   };
 }
 
 function exactMatchPreference(row: CardPageRow, exactSlugs: string[]): number {
   if (exactSlugs.includes(row.slug)) return 0;
-  return ENTITY_PAGE_TYPES.has(row.type ?? '') ? 1 : 2;
+  return ENTITY_SHAPED_TYPES.has(row.type ?? '') ? 1 : 2;
 }
 
 async function assembleCard(
@@ -408,9 +451,16 @@ async function assembleCard(
 }
 
 /**
- * Near-miss suggestions on a total miss (E5 delight): keyword search top-N
- * with evidence-derived create_safety so a typo'd name becomes a next move
- * instead of a dead end. Zero LLM; fail-soft to [].
+ * Near-miss suggestions on a total miss (E5 delight), so a typo'd or
+ * wrongly-prefixed name becomes a next move instead of a dead end. Zero LLM;
+ * every arm fail-soft.
+ *
+ * Name matches come first: pages whose title or slug contains the name (the
+ * resolve_slugs arm, entity-shaped pages ahead of the rest) and, for a
+ * slug-shaped name, pages that share its last segment, so
+ * "orgs/acme-example" offers "companies/acme-example". Keyword (content)
+ * matches fill the rest. A name match is create_safety 'probable': the page
+ * exists and is likely the one meant, so update it rather than create one.
  */
 async function nearMissSuggestions(
   engine: BrainEngine,
@@ -418,20 +468,85 @@ async function nearMissSuggestions(
   name: string,
   excludePrivate = false,
 ): Promise<EntitySuggestion[]> {
+  const out: EntitySuggestion[] = [];
+  const seen = new Set<string>();
+  const push = (s: EntitySuggestion) => {
+    if (seen.has(s.slug) || out.length >= NEAR_MISS_CAP) return;
+    seen.add(s.slug);
+    out.push(s);
+  };
+
+  for (const s of await nameMatchSuggestions(engine, sourceId, name, excludePrivate)) push(s);
+
   try {
-    const raw = await engine.searchKeyword(name, { limit: SUGGESTION_CAP, sourceId, excludePrivate });
+    const raw = await engine.searchKeyword(name, { limit: NEAR_MISS_CAP, sourceId, excludePrivate });
     const results = raw as SearchResult[];
     // #3783 — direct FTS path: every row is a keyword hit by construction.
     markKeywordHits(results);
     stampEvidence(results);
-    return results.map(r => ({
-      slug: r.slug,
-      title: r.title ?? r.slug,
-      create_safety: r.create_safety ?? 'unknown',
-    }));
+    for (const r of results) {
+      push({ slug: r.slug, title: r.title ?? r.slug, create_safety: r.create_safety ?? 'unknown' });
+    }
+  } catch {
+    /* keyword arm unavailable — name matches stand alone */
+  }
+  return out;
+}
+
+/** The near-miss list `entity` returns on a miss, for callers that refuse instead. */
+export async function entityNearMisses(
+  engine: BrainEngine,
+  sourceId: string,
+  name: string,
+  opts: { remote: boolean },
+): Promise<EntitySuggestion[]> {
+  const { resolveExcludePrivatePages } = await import('../search/private-visibility.ts');
+  const excludePrivate = await resolveExcludePrivatePages(engine, opts.remote ? undefined : false);
+  return nearMissSuggestions(engine, sourceId, name.trim(), excludePrivate);
+}
+
+async function nameMatchSuggestions(
+  engine: BrainEngine,
+  sourceId: string,
+  name: string,
+  excludePrivate: boolean,
+): Promise<EntitySuggestion[]> {
+  // The name as typed, then (for a slug-shaped name) its last segment: the
+  // part that survives a wrong directory prefix.
+  const partials = [name];
+  const tail = name.includes('/') ? name.split('/').filter(Boolean).pop() : undefined;
+  if (tail && tail !== name) partials.push(tail);
+
+  const ordered: string[] = [];
+  for (const partial of partials) {
+    try {
+      for (const s of await engine.resolveSlugs(partial, { sourceId, excludePrivate })) {
+        if (!ordered.includes(s)) ordered.push(s);
+      }
+    } catch {
+      /* fail-soft */
+    }
+  }
+  if (!ordered.length) return [];
+
+  let rows: Array<{ slug: string; title: string | null; type: string | null }> = [];
+  try {
+    // The privacy predicate sits on this read too, not only on resolve_slugs:
+    // the titles shown come from here, and a page can turn private between.
+    const { privatePagesFilterFragment } = await import('../search/private-visibility.ts');
+    rows = await engine.executeRaw<{ slug: string; title: string | null; type: string | null }>(
+      `SELECT slug, title, type FROM pages WHERE deleted_at IS NULL AND source_id = $1 AND slug = ANY($2::text[])${excludePrivate ? ` AND ${privatePagesFilterFragment('pages')}` : ''}`,
+      [sourceId, ordered],
+    );
   } catch {
     return [];
   }
+  const bySlug = new Map(rows.map(r => [r.slug, r]));
+  // Stable: resolve_slugs order inside each group, entity-shaped pages first.
+  const live = ordered.map(s => bySlug.get(s)).filter((r): r is NonNullable<typeof r> => r !== undefined);
+  const entityShaped = live.filter(r => ENTITY_SHAPED_TYPES.has(r.type ?? ''));
+  const rest = live.filter(r => !ENTITY_SHAPED_TYPES.has(r.type ?? ''));
+  return [...entityShaped, ...rest].map(r => ({ slug: r.slug, title: r.title ?? r.slug, create_safety: 'probable' }));
 }
 
 function lastTouchedMs(row: CardPageRow): number {

@@ -7,6 +7,7 @@
  * so their initialize responses cannot drift.
  */
 import type { GBrainConfig } from '../core/config.ts';
+import { brandText } from '../cosmic/brand.ts';
 import { buildAmbientWritebackSection } from '../core/facts/writeback-instructions.ts';
 import type { AmbientWritebackOpts } from '../core/facts/writeback-instructions.ts';
 
@@ -62,6 +63,6 @@ export function resolveMcpInstructions(
   // mcp.instructions and silently blanked the deployment identity.
   const fromEnv = env.GBRAIN_MCP_INSTRUCTIONS?.trim();
   const deploymentIdentity = fromEnv || config?.mcp?.instructions?.trim();
-  if (!deploymentIdentity) return base;
-  return `${base}\n\nDeployment identity:\n${deploymentIdentity}`;
+  if (!deploymentIdentity) return brandText(base);
+  return brandText(`${base}\n\nDeployment identity:\n${deploymentIdentity}`);
 }

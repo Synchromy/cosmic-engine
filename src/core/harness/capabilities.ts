@@ -1,4 +1,5 @@
 import type { AuthInfo } from '../ops/contract.ts';
+import { brandCapabilities } from '../../cosmic/brand.ts';
 import { hasScope } from '../scope.ts';
 import type { BrainEngine } from '../engine.ts';
 import type { GBrainConfig } from '../config.ts';
@@ -61,7 +62,7 @@ export async function resolveAuthCapabilities(auth: AuthInfo, engine: BrainEngin
   const visibleOperations = filterOpsForSurface(operations.filter(op => !op.localOnly), surface).filter(op =>
     (hasScope(auth.scopes, op.scope ?? 'read') || (op.agentCallable === true && hasScope(auth.scopes, 'agent')))
     && opAllowedForBoundClient(auth, op) && !disabled.has(op.name)).map(op => op.name);
-  return describeAuthCapabilities(auth, { surface, visibleOperations, delegatedTools: grantCatalog().delegateToolNames });
+  return brandCapabilities(describeAuthCapabilities(auth, { surface, visibleOperations, delegatedTools: grantCatalog().delegateToolNames }));
 }
 
 /** No credentials or private inventories. Uses the already authenticated grant

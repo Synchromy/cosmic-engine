@@ -62,7 +62,14 @@ const get_health: Operation = {
     } catch {
       migrations = { error: 'ledger_unreadable' };
     }
-    return { ...health, migrations };
+    let embed_waiting: unknown;
+    try {
+      const { countEmbedWaiting } = await import('../embed-outage.ts');
+      embed_waiting = { pages: await countEmbedWaiting(ctx.engine, diagnosticScope(ctx)) };
+    } catch {
+      embed_waiting = { error: 'unavailable' };
+    }
+    return { ...health, migrations, embed_waiting };
   },
   scope: 'admin',
   cliHints: { name: 'health' },

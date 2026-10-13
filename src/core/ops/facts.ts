@@ -27,6 +27,7 @@ import { isAvailable } from '../ai/gateway.ts';
 import { ENTITY_HINTS_CAP } from '../facts/extract.ts';
 import { parseTtlShorthand } from '../facts/ttl-parse.ts';
 import { MEMORY_VERBS_VERSION } from '../verbs.ts';
+import { derivesFrom, RESTRICTED_SOURCE_REASON } from '../restricted-no-derive.ts';
 import type { SearchResult } from '../types.ts';
 import { AUDIT_ROW_SOURCES } from '../facts/audit-sources.ts';
 
@@ -80,6 +81,10 @@ const extract_facts: Operation = {
     }
 
     const sourceId = ctx.sourceId ?? 'default';
+    // C-72: nothing shared is derived from a member-hidden source.
+    if (!derivesFrom(sourceId)) {
+      return { inserted: 0, duplicate: 0, superseded: 0, fact_ids: [], skipped: RESTRICTED_SOURCE_REASON, ...hintAccounting };
+    }
     // [ENG-8] Explicit caller value wins; UNSET resolves through the shared
     // facts.default_visibility helper (the old ternary coerced unset →
     // 'private' before any config default could run). Garbage stays 'private'.
@@ -845,6 +850,43 @@ const forget_fact: Operation = {
 };
 
 /**
+ * Delete one fence row and its facts row, for the writer that put it there
+ * (see facts/delete-fence-row.ts). Unlike forget_fact this removes the row
+ * from the page and records no withdrawal: it is for facts that ran out, not
+ * facts that were wrong. The caller proves authorship by naming the row's
+ * provenance exactly; anything else is refused and left untouched.
+ */
+const delete_fact: Operation = {
+  name: 'delete_fact',
+  description: 'Delete one fact you wrote: its row in the page\'s Markdown facts fence and its facts row, together, under the source and page locks. Refuses unless `provenance` equals the row\'s recorded provenance exactly, the row is on a page, and the fence holds it as the database records it; a refused call changes nothing. Records no withdrawal, so the same claim can be remembered again later. To retract a wrong fact, use forget instead.',
+  params: {
+    id: { type: 'number', required: true, description: 'Fact id to delete (fact_id from remember or recall).' },
+    provenance: { type: 'string', required: true, description: 'The provenance the fact was written with (remember\'s provenance). Must match the row exactly.' },
+  },
+  mutating: true,
+  scope: 'write',
+  area: 'memory',
+  annotations: { title: 'delete a fact you wrote', destructiveHint: true, idempotentHint: false },
+  handler: async (ctx, p) => {
+    const id = Number(p.id);
+    const provenance = typeof p.provenance === 'string' ? p.provenance : '';
+    if (!Number.isInteger(id) || id <= 0) throw new OperationError('invalid_params', `id must be a positive integer, got ${String(p.id)}.`);
+    if (!provenance.trim()) throw new OperationError('invalid_params', 'provenance is required: the provenance the fact was written with.');
+    if (ctx.dryRun) return { dry_run: true, action: 'delete_fact', id };
+    const { deleteFenceRow } = await import('../facts/delete-fence-row.ts');
+    const r = await deleteFenceRow(ctx.engine, id, {
+      sourceId: ctx.sourceId ?? 'default',
+      provenance,
+      worldOnly: ctx.remote !== false,
+    });
+    if (!r.ok) {
+      throw new OperationError(r.refused === 'not_found' ? 'fact_not_found' : r.refused, r.detail);
+    }
+    return { id, deleted: true, slug: r.slug, row_num: r.row_num };
+  },
+};
+
+/**
  * recall's per-arm limit clamp — applied ONCE, before the per-source fan-out.
  * The doc contract is "Default 50, cap 100": each engine clamps its own query,
  * but the cross-source merge slices with THIS value, so an unclamped limit
@@ -933,5 +975,5 @@ export function parseTtlParam(raw: unknown): Date | null {
 }
 
 export const factsOperations: Operation[] = [
-  extract_facts, recall, context_pack, delta, forget_fact,
+  extract_facts, recall, context_pack, delta, forget_fact, delete_fact,
 ];

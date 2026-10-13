@@ -167,7 +167,7 @@ afterAll(async () => {
 // Harness helpers
 // ---------------------------------------------------------------------------
 
-/** Flip BOTH publish gates together on the DB plane (per-key independence is
+/** Flip every publish gate together on the DB plane (per-key independence is
  * pinned by test/publish-gates.test.ts; the matrix treats gates as one axis). */
 async function setGates(on: boolean): Promise<void> {
   await engine.setConfig('mcp.publish_skills', on ? 'true' : 'false');
@@ -588,7 +588,7 @@ describe('E5 truthful catalog — OAuth-path cells (serve-http seams over dispat
     expect(mismatches).toEqual([]);
   });
 
-  e5test('matrix: denial-class representative probes per cell (gated ×4, admin op, localOnly op, request_tools)', async () => {
+  e5test('matrix: denial-class representative probes per cell (all gated ops, admin op, localOnly op, request_tools)', async () => {
     const violations: string[] = [];
     const record = (cell: Cell, name: string, msg: string) =>
       violations.push(`${cell.label} / ${name}: ${msg}`);

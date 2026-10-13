@@ -7,6 +7,7 @@
  * page_links, chunk_relations via existing FKs.
  */
 import type { BrainEngine } from '../core/engine.ts';
+import { movePageSource } from '../core/move-source.ts';
 
 const SOFT_DELETE_TTL_HOURS_DEFAULT = 72;
 
@@ -57,6 +58,16 @@ async function runPurgeDeleted(engine: BrainEngine, args: string[]): Promise<voi
   }
 }
 
+async function runMoveSource(engine: BrainEngine, args: string[]): Promise<void> {
+  const [slug, to] = args;
+  if (!slug || !to) throw new Error('Usage: gbrain pages move-source <slug> <to> [--from <source>] [--dry-run] [--json]');
+  const fromIndex = args.indexOf('--from');
+  if (fromIndex !== -1 && !args[fromIndex + 1]) throw new Error('--from requires a source id.');
+  const result = await movePageSource(engine, { slug, to, from: fromIndex === -1 ? undefined : args[fromIndex + 1], dryRun: args.includes('--dry-run') });
+  if (args.includes('--json')) console.log(JSON.stringify(result, null, 2));
+  else console.log(`${result.dry_run ? '(dry-run) Would move' : 'Moved'} '${result.slug}' from '${result.from}' to '${result.to}'.`);
+}
+
 function printHelp(): void {
   console.log(`gbrain pages — page-level operator commands (v0.26.5)
 
@@ -65,6 +76,8 @@ Subcommands:
                                     Hard-delete soft-deleted pages older than the cutoff
                                     (default 72h). Cascades to chunks/links/edges.
                                     Mirror of the autopilot purge phase.
+  move-source <slug> <to> [--from <source>] [--dry-run] [--json]
+                                    Move one page and its page-local source rows.
 
 Notes:
   Soft-delete a page via the MCP \`delete_page\` op. Restore via \`restore_page\`.
@@ -79,6 +92,9 @@ export async function runPages(engine: BrainEngine, args: string[]): Promise<voi
 
   switch (sub) {
     case 'purge-deleted': return runPurgeDeleted(engine, rest);
+    case 'move-source':
+      try { return await runMoveSource(engine, rest); }
+      catch (error) { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; return; }
     case undefined:
     case '--help':
     case '-h':

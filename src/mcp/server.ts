@@ -1,4 +1,5 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { brandServerName } from '../cosmic/brand.ts';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { BrainEngine } from '../core/engine.ts';
@@ -204,7 +205,7 @@ export async function startMcpServer(engine: BrainEngine, opts: { surface?: McpS
   // serve reaches this call.
   const writeback = await resolveWritebackConfig(engine, config);
   const server = new Server(
-    { name: 'gbrain', version: VERSION },
+    { name: brandServerName('gbrain'), version: VERSION },
     // listChanged: a client that handshakes during DEGRADED mode receives the
     // gate-hidden catalog (stdioVisibleTools fail-closes every publishGateKey
     // op on engine failure) and caches it — recovery sends the notification

@@ -3298,18 +3298,18 @@ export class PostgresEngine implements BrainEngine {
     // RLS scope binding (opt-in via GBRAIN_RLS_SCOPE_BINDING).
     return await this.withScopedReadTransaction(opts?.sourceIds, opts?.sourceId, async (tx) => {
       // v114 (#1941): distinct provenances + counts for `gbrain link-sources`.
-      // Scope by the FROM page's source (consistent with getLinks). Federated
-      // {sourceIds} takes precedence over scalar {sourceId}; neither = unscoped.
+      // Scoped: BOTH endpoints in scope (cosmic patch link-sources-both-endpoints).
+      // Federated {sourceIds} takes precedence over scalar {sourceId}; neither = unscoped.
       const sourceCondition =
         opts?.sourceIds && opts.sourceIds.length > 0
-          ? tx`WHERE f.source_id = ANY(${opts.sourceIds}::text[])`
+          ? tx`WHERE f.source_id = ANY(${opts.sourceIds}::text[]) AND t.source_id = ANY(${opts.sourceIds}::text[])`
           : opts?.sourceId
-            ? tx`WHERE f.source_id = ${opts.sourceId}`
+            ? tx`WHERE f.source_id = ${opts.sourceId} AND t.source_id = ${opts.sourceId}`
             : tx``;
       const rows = await tx`
         SELECT l.link_source, COUNT(*)::int AS count
         FROM links l
-        JOIN pages f ON f.id = l.from_page_id
+        JOIN pages f ON f.id = l.from_page_id JOIN pages t ON t.id = l.to_page_id
         ${sourceCondition}
         GROUP BY l.link_source
         ORDER BY count DESC, l.link_source ASC NULLS LAST

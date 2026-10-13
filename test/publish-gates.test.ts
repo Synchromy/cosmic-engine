@@ -23,14 +23,14 @@ function engineWithConfig(values: Record<string, string | null> | 'throws'): Bra
 }
 
 describe('publish-gates: gate declaration', () => {
-  test('exactly the four gated ops carry publishGateKey', () => {
+  test('exactly the reviewed gated ops carry publishGateKey', () => {
     const declared = operations.filter(o => o.publishGateKey).map(o => o.name).sort();
     expect(declared).toEqual([...GATED_OPS].sort());
   });
 });
 
 describe('publish-gates: disabledOpsForPublishGates', () => {
-  test('gates absent on both planes → all four hidden (default-off posture)', async () => {
+  test('gates absent on both planes → all gated operations hidden (default-off posture)', async () => {
     const disabled = await disabledOpsForPublishGates(engineWithConfig({}), null);
     for (const name of GATED_OPS) expect(disabled.has(name)).toBe(true);
   });
@@ -72,6 +72,7 @@ describe('publish-gates: disabledOpsForPublishGates', () => {
     const cfg = { engine: 'pglite', mcp: { publish_skills: true } } as unknown as GBrainConfig;
     expect(await readPublishGate(engineWithConfig('throws'), cfg, 'mcp.publish_skills')).toBe(true);
   });
+
 });
 
 describe('opAllowedForBoundClient (ENG-3: list filter and fence share one predicate)', () => {

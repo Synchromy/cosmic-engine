@@ -5,6 +5,7 @@
 import type { BrainEngine } from '../engine.ts';
 import { isChronicleEligible } from './eligibility.ts';
 import { isAutoChronicleEnabled } from './config.ts';
+import { derivesFrom, RESTRICTED_SOURCE_REASON } from '../restricted-no-derive.ts';
 
 export interface ChronicleBackstopResult {
   enqueued: boolean;
@@ -21,6 +22,7 @@ export async function runChronicleBackstop(
   page: { slug: string; type: string; compiled_truth?: string; frontmatter?: Record<string, unknown> },
   ctx: { engine: BrainEngine; sourceId: string },
 ): Promise<ChronicleBackstopResult> {
+  if (!derivesFrom(ctx.sourceId)) return { enqueued: false, skipped: RESTRICTED_SOURCE_REASON };
   const dreamGenerated = page.frontmatter?.dream_generated === true;
   const elig = isChronicleEligible({
     type: page.type, slug: page.slug, body: page.compiled_truth, dreamGenerated,

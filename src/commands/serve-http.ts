@@ -11,6 +11,7 @@
  */
 
 import express from 'express';
+import { isCredential, brandServerName, brandResourceName } from '../cosmic/brand.ts';
 import type { Socket } from 'net';
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import cookieParser from 'cookie-parser';
@@ -53,6 +54,7 @@ import { hasScope, ALLOWED_SCOPES_LIST, normalizeScopesInput } from '../core/sco
 import { normalizeTokenScopes } from '../core/legacy-token-scope.ts';
 import { normalizeSourceInput, normalizeFederatedReadInput } from '../core/source-id.ts';
 import { summarizeMcpParams, dispatchToolCall, requestLogStatusForResult } from '../mcp/dispatch.ts';
+import { requestLogParamsWithUsage } from '../core/put-page-usage.ts';
 import { resolveStrictParamsMode } from '../mcp/validate-params.ts';
 import { buildToolDefs } from '../mcp/tool-defs.ts';
 import {
@@ -1152,7 +1154,7 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
     // users_admin via /.well-known/oauth-authorization-server. The legacy
     // ['read','write','admin'] list left those new scopes invisible.
     scopesSupported: [...ALLOWED_SCOPES_LIST],
-    resourceName: 'GBrain MCP Server',
+    resourceName: brandResourceName('GBrain MCP Server'),
     // Advertise /mcp as the protected resource (see mcpResourceUrl above).
     resourceServerUrl: mcpResourceUrl,
   };
@@ -2292,7 +2294,7 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
       });
     }
     const server = new Server(
-      { name: 'gbrain', version: VERSION },
+      { name: brandServerName('gbrain'), version: VERSION },
       {
         capabilities: { tools: {}, resources: {} },
         // #4748: contract (+ opt-in writeback section) + deployment identity.
@@ -2300,7 +2302,7 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
       },
     );
     installCapabilitiesResource(server, async () => {
-      return { transport: authInfo.clientId.startsWith('gbrain_cl_') ? 'oauth' : 'legacy', client_id: authInfo.clientId,
+      return { transport: isCredential(authInfo.clientId, 'gbrain_cl_') ? 'oauth' : 'legacy', client_id: authInfo.clientId,
         ...await resolveAuthCapabilities(authInfo, engine, config) };
     });
     server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -2613,7 +2615,7 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
           `INSERT INTO mcp_request_log (token_name, agent_name, operation, latency_ms, status, params)
            VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
           [authInfo.clientId, agentName, name, latency, successStatus],
-          [logParamsObj],
+          [requestLogParamsWithUsage(name, logParamsObj, toolResult)],
         );
       } catch { /* best effort */ }
       broadcastEvent({

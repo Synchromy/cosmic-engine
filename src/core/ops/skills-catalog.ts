@@ -134,6 +134,9 @@ const advisor: Operation = {
         throw err;
       }
     }
+    // cosmic patch restricted-advisor
+    const { assertAdvisorReadsWholeBrain } = await import('../restricted-advisor.ts');
+    await assertAdvisorReadsWholeBrain(ctx);
     const { runAdvisor } = await import('../advisor/run.ts');
     const { VERSION } = await import('../../version.ts');
     // Over MCP there is no agent workspace on the server side: remote=true makes

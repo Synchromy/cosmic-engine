@@ -49,7 +49,7 @@ describe('stdioVisibleTools (B1)', () => {
     expect(names).not.toContain('advisor');
   });
 
-  test('both gates on: full surfaced set returned unchanged', async () => {
+  test('all gates on: full surfaced set returned unchanged', async () => {
     const engine = engineWithGates({ 'mcp.publish_skills': 'true', 'mcp.publish_advisor': 'true' });
     const visible = await stdioVisibleTools(engine, operations);
     expect(visible.length).toBe(operations.length);
