@@ -75,6 +75,20 @@ describe('purge_page in one source', () => {
     expect(await count('content_chunks', page.id)).toBe(0);
   });
 
+  it('dry run answers without deleting a live row, its chunks, or its versions', async () => {
+    await addSource('source-a');
+    const page = await seed('notes/dry-run', 'source-a');
+
+    await expect(purgePage.handler({ ...localCtx('source-a'), dryRun: true }, {
+      slug: page.slug,
+      source_id: 'source-a',
+    })).resolves.toEqual({ dry_run: true, action: 'purge_page', slug: page.slug, source_id: 'source-a' });
+    expect(await engine.getPage(page.slug, { sourceId: 'source-a', includeDeleted: true })).not.toBeNull();
+    expect(await count('pages', page.id)).toBe(1);
+    expect(await count('content_chunks', page.id)).toBeGreaterThan(0);
+    expect(await count('page_versions', page.id)).toBeGreaterThan(0);
+  });
+
   it('leaves the same slug in another source untouched', async () => {
     await addSource('source-a');
     await addSource('source-b');
