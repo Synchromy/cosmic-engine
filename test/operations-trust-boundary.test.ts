@@ -230,6 +230,9 @@ describe('mcpOperations filter — localOnly ops are excluded from the HTTP-expo
       'migrate_embeddings',
       'purge_deleted_pages',
       'purge_page',
+      // cosmic-hub #610: the host reconciles a remote writer's page links
+      // from that writer's grant; a writer never asks for its own edges.
+      'reconcile_page_links',
       'sync_brain',
     ];
     const derived = operations.filter(o => o.localOnly).map(o => o.name).sort();

@@ -110,6 +110,13 @@ const PROBES: Record<string, () => void> = {
     expect(src).toContain("name: 'purge_page'");
     expect(src).toContain('ctx.engine.deletePage(slug, { sourceId })');
   },
+  'reconcile-page-links': () => {
+    const op = operationsByName.reconcile_page_links;
+    expect(op).toBeDefined();
+    expect(op.localOnly).toBe(true);
+    expect(op.params.read_sources?.required).toBe(true);
+    expect(readFileSync('src/core/ops/pages.ts', 'utf8')).toContain('export async function reconcileLinksForWriter(');
+  },
   'cosmic-brand': () => {
     // Every anchor applied; test/cosmic-brand.test.ts is the leak test proper.
     const r = brandCheck('.', true);

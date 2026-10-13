@@ -416,6 +416,28 @@
       ]
     },
     {
+      "id": "reconcile-page-links",
+      "branch": "upstream/reconcile-page-links",
+      "what": "reconcile_page_links, a local-only op: the host runs put_page's link and timeline reconciliation for one page a remote writer wrote, held to that writer's grant (outbound edges only, only to existing pages in a write source it reads, none to a private page remote readers cannot see, the page inside its slug fence, timeline entries on the page only); dry_run counts and writes nothing",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-13",
+        "note": "not offered: upstream skips remote reconciliation by design and runs the serve sweep instead; this op exists for cosmic-hub's per-writer policy"
+      },
+      "since": "2026-10-13",
+      "depends_on": [
+        "purge-page-in-source"
+      ],
+      "hub_uses": "serve/remote-links.ts (cosmic-hub #610): after a remote put_page or capture, the gateway queues the page and the drain calls reconcile_page_links with the writer's write source, read grant and slug fence; bin/reconcile-remote-links.ts backfills pages written before",
+      "tests": [
+        "test/reconcile-page-links.test.ts",
+        "test/operations-trust-boundary.test.ts",
+        "test/operations-coverage-ledger.test.ts"
+      ]
+    },
+    {
       "id": "cosmic-brand",
       "script": "scripts/cosmic-brand.ts",
       "what": "Cosmic's name on what the engine tells a connected agent and the public: handshake, tool descriptions, hints, server and resource names, new credential prefixes (cosmic_). Inert unless COSMIC_BRAND is set",
