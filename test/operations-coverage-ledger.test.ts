@@ -42,6 +42,7 @@ const LEDGER: Record<string, string> = {
   list_pages_with_frontmatter: 'test/list-pages-with-frontmatter.test.ts',
   restore_page: 'test/pages-source-scoping-4329.test.ts',
   purge_deleted_pages: 'test/operations-trust-boundary.test.ts',
+  purge_page: 'test/purge-page-in-source.test.ts',
   capture: 'test/capture-op.test.ts',
   search: 'test/cli-search-dispatch.test.ts',
   query: 'test/query-image-flag.serial.test.ts',

@@ -103,6 +103,13 @@ const PROBES: Record<string, () => void> = {
     expect(op.params.type?.required).toBe(true);
     expect(op.params.where?.type).toBe('object');
   },
+  'purge-page-in-source': () => {
+    expect(operationsByName.purge_page).toBeDefined();
+    expect(operationsByName.purge_page.params.source_id?.required).toBe(true);
+    const src = readFileSync('src/core/ops/pages.ts', 'utf8');
+    expect(src).toContain("name: 'purge_page'");
+    expect(src).toContain('ctx.engine.deletePage(slug, { sourceId })');
+  },
   'reconcile-page-links': () => {
     const op = operationsByName.reconcile_page_links;
     expect(op).toBeDefined();

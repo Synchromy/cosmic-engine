@@ -398,6 +398,24 @@
       ]
     },
     {
+      "id": "purge-page-in-source",
+      "branch": "v050/purge-page-in-source",
+      "what": "purge_page { slug, source_id }: hard-deletes one page row in one named source, live or soft-deleted, with its chunks, versions, links and timeline (FK cascades); source_id required with no default; admin scope, local only; a missing row answers removed: 0",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-12",
+        "note": "carried patch, not offered upstream: removing a Beam page's copy from the source members read (C-114, add-beam-access)"
+      },
+      "since": "2026-10-12",
+      "depends_on": [],
+      "hub_uses": "purge_page: serve/beam-access.ts placeCopy removes a Beam page's copy from the source it must not be in (C-114, add-beam-access), through gb.call('purge_page', …, { source }); not yet written",
+      "tests": [
+        "test/purge-page-in-source.test.ts"
+      ]
+    },
+    {
       "id": "reconcile-page-links",
       "branch": "upstream/reconcile-page-links",
       "what": "reconcile_page_links, a local-only op: the host runs put_page's link and timeline reconciliation for one page a remote writer wrote, held to that writer's grant (outbound edges only, only to existing pages in a write source it reads, none to a private page remote readers cannot see, the page inside its slug fence, timeline entries on the page only); dry_run counts and writes nothing",
