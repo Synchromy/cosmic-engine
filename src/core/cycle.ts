@@ -54,6 +54,7 @@ import { timeContainedPhase } from './cycle/phase-containment.ts';
 import { isManagedBrain } from './cycle/phase-table.ts';
 import { managedPullWarning, type UpstreamRefresh } from './sync-upstream.ts';
 import { assertValidSourceId } from './source-id.ts';
+import { restrictCycleDerivations, excludedCyclePhaseResult } from './restricted-no-derive.ts';
 import { PHASE_SCOPE, SOURCE_FRESHNESS_PHASES, type PhaseScope } from './cycle/phase-scope.ts';
 import { acquireLeaseSet, maintenanceLockBusySkip, MAINTENANCE_LEASE_ID } from './cycle/lock-set.ts';
 import { assertEmbedNotStalled } from './embed-stall.ts'; import { embedBackfillFix } from './embed-consent.ts';
@@ -1888,7 +1889,18 @@ export async function runCycle(
 ): Promise<CycleReport> {
   const start = performance.now();
   const requestedPhases = opts.phases ?? ALL_PHASES;
-  let phases = resolveCyclePhases(opts.phases, opts.sourceId, opts.fullImplicitSourceCycle);
+  // A1: canonical per-source scope for the DB-capable per-source phases
+  // (extract_facts, extract_atoms, the calibration trio). Explicit --source
+  // (opts.sourceId) wins; else derive from the resolved checkout dir. Without
+  // this, `gbrain dream --source repo-a` on a checkout-less brain would scope
+  // those phases to 'default' (resolveSourceForDir(null) → undefined) while the
+  // cycle still locks + stamps last_full_cycle_at for repo-a — a freshness
+  // stamp that lies. resolveSourceForDir returns undefined when brainDir is
+  // null, so opts.sourceId is the only signal in the no-checkout case.
+  const cycleSourceId: string | undefined = engine
+    ? (opts.sourceId ?? (await resolveSourceForDir(engine, opts.brainDir)))
+    : opts.sourceId;
+  let phases = restrictCycleDerivations(resolveCyclePhases(opts.phases, opts.sourceId, opts.fullImplicitSourceCycle), cycleSourceId);
   const excludedPhases = requestedPhases.filter((phase) => !phases.includes(phase));
   const dryRun = !!opts.dryRun;
   const pull = !!opts.pull;
@@ -1898,17 +1910,7 @@ export async function runCycle(
   const cycleDate = engine
     ? await import('./cycle/cycle-date.ts').then(m => m.resolveCycleDate(engine)).catch(() => undefined)
     : undefined;
-  const phaseResults: PhaseResult[] = excludedPhases.map((phase) => ({
-    phase,
-    status: 'skipped',
-    duration_ms: 0,
-    summary: `excluded from implicit non-default source cycle (${PHASE_SCOPE[phase]} scope)`,
-    details: {
-      reason: 'excluded_from_implicit_source_cycle',
-      source_id: opts.sourceId,
-      phase_scope: PHASE_SCOPE[phase],
-    },
-  }));
+  const phaseResults: PhaseResult[] = excludedPhases.map(phase => excludedCyclePhaseResult(phase, cycleSourceId));
 
   // Capture as a const so it narrows to `string` inside the `else` branches of
   // the per-phase `if (brainDir === null)` guards, even within async closures
@@ -1925,17 +1927,6 @@ export async function runCycle(
     details: { reason: 'no_brain_dir' },
   });
 
-  // A1: canonical per-source scope for the DB-capable per-source phases
-  // (extract_facts, extract_atoms, the calibration trio). Explicit --source
-  // (opts.sourceId) wins; else derive from the resolved checkout dir. Without
-  // this, `gbrain dream --source repo-a` on a checkout-less brain would scope
-  // those phases to 'default' (resolveSourceForDir(null) → undefined) while the
-  // cycle still locks + stamps last_full_cycle_at for repo-a — a freshness
-  // stamp that lies. resolveSourceForDir returns undefined when brainDir is
-  // null, so opts.sourceId is the only signal in the no-checkout case.
-  const cycleSourceId: string | undefined = engine
-    ? (opts.sourceId ?? (await resolveSourceForDir(engine, brainDir)))
-    : opts.sourceId;
   const orphansSourceId = opts.forceGlobalOrphans ? undefined : cycleSourceId;
 
   const progress = createProgress(cliOptsToProgressOptions(getCliOptions()));

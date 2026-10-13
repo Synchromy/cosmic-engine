@@ -240,6 +240,7 @@ brackets are filled in with real values on each surface.
 <!-- chronicle-reasons:begin -->
 | Code | Stage | Meaning | Fix | Who acts | Consent |
 |---|---|---|---|---|---|
+| `restricted_source` | decision | This source is excluded from shared derivations. | — | — | — |
 | `auto_chronicle_off` | decision | Automatic event extraction is off on this brain by choice (`gbrain config set auto_chronicle false`). | — | — | — |
 | `auto_chronicle_invalid` | decision | auto_chronicle holds a value that is neither true nor false, so it reads as off. | `gbrain config set auto_chronicle true` | agent | paid |
 | `slug_bound_client` | decision | The writer is confined (slug-bound, delegated or namespace-restricted), so its writes never trigger extraction into life/events/. | `gbrain chronicle-backfill --source <source> --since <YYYY-MM-DD> --limit 50 --yes` (preview: `gbrain chronicle-backfill --source <source> --since <YYYY-MM-DD> --limit 50 --dry-run`) | host_admin | paid |
