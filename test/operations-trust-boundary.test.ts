@@ -229,8 +229,6 @@ describe('mcpOperations filter — localOnly ops are excluded from the HTTP-expo
       'get_recent_transcripts',
       'migrate_embeddings',
       'purge_deleted_pages',
-      // C-114 carried patch: hard-deletes one page from one source, no
-      // recovery window; remote callers must never reach it.
       'purge_page',
       'sync_brain',
     ];
