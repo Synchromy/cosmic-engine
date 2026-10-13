@@ -931,6 +931,37 @@ export async function autoLinkWrittenPage(
 }
 
 /**
+ * The reconciliation a page written by a remote writer never got (put_page
+ * skips it for `ctx.remote !== false`), run afterwards by the trusted host on
+ * that writer's behalf, held to what that writer may read
+ * (ops/reconcile-page-links.ts, cosmic-hub #610).
+ *
+ * The same runAutoLink a trusted put_page runs, with three limits:
+ *   - outbound only: no `direction: incoming` frontmatter edge, which would
+ *     originate on ANOTHER page, is created or removed;
+ *   - an edge whose target `withheldTargets` names is neither created nor
+ *     removed, so a page the writer cannot read gains no edge and an edge a
+ *     trusted write made to it is left alone;
+ *   - `dryRun` counts what would change and writes nothing.
+ * `leftAsText` counts outbound references whose target page does not exist.
+ */
+export async function reconcileLinksForWriter(
+  engine: BrainEngine,
+  slug: string,
+  parsed: { type: PageType; compiled_truth: string; timeline: string; frontmatter: Record<string, unknown> },
+  opts: { sourceId: string; withheldTargets: (slugs: string[]) => Promise<Set<string>>; dryRun?: boolean },
+): Promise<{ created: number; removed: number; errors: number; unresolved: UnresolvedFrontmatterRef[]; withheld: number; leftAsText: number }> {
+  const r = await runAutoLink(engine, slug, parsed, {
+    sourceId: opts.sourceId,
+    writer: { withheldTargets: opts.withheldTargets, dryRun: opts.dryRun === true },
+  });
+  return {
+    created: r.created, removed: r.removed, errors: r.errors, unresolved: r.unresolved,
+    withheld: r.withheld ?? 0, leftAsText: r.leftAsText ?? 0,
+  };
+}
+
+/**
  * Extract entity refs from a freshly-written page, sync the links table to match.
  * Creates new links via addLink, removes stale ones (links present in DB but no
  * longer referenced in content) via removeLink. Returns counts.
@@ -944,9 +975,15 @@ async function runAutoLink(
   engine: BrainEngine,
   slug: string,
   parsed: { type: PageType; compiled_truth: string; timeline: string; frontmatter: Record<string, unknown> },
-  opts?: { sourceId?: string },
-): Promise<{ created: number; removed: number; errors: number; unresolved: UnresolvedFrontmatterRef[] }> {
+  opts?: {
+    sourceId?: string;
+    /** Set only by reconcileLinksForWriter: outbound only, withheld targets
+     *  untouched, optional dry run. Absent, behaviour is unchanged. */
+    writer?: { withheldTargets: (slugs: string[]) => Promise<Set<string>>; dryRun: boolean };
+  },
+): Promise<{ created: number; removed: number; errors: number; unresolved: UnresolvedFrontmatterRef[]; withheld?: number; leftAsText?: number }> {
   const fullContent = parsed.compiled_truth + '\n' + parsed.timeline;
+  const writer = opts?.writer;
   // v0.31.8 (codex OV-2): thread sourceId through every read + write inside
   // reconcileLinks. Without this the FS walker reads cross-source links/slugs
   // but writes scoped to one source — phantom stale-deletions and duplicate
@@ -1017,8 +1054,14 @@ async function runAutoLink(
   // but SCOPED to the frontmatter edges this page authored via
   // (link_source='frontmatter' AND origin_slug = slug). We never touch
   // frontmatter edges authored by OTHER pages.
-  const out = valid.filter(c => !c.fromSlug || c.fromSlug === slug);
-  const inc = valid.filter(c => c.fromSlug && c.fromSlug !== slug);
+  let out = valid.filter(c => !c.fromSlug || c.fromSlug === slug);
+  // A remote writer's page may only originate edges: an incoming frontmatter
+  // edge starts on another page.
+  const inc = writer ? [] : valid.filter(c => c.fromSlug && c.fromSlug !== slug);
+  // Outbound references that name no existing page: kept as text, counted.
+  const leftAsText = writer
+    ? new Set(candidates.filter(c => (!c.fromSlug || c.fromSlug === slug) && !existingSlugs.has(c.targetSlug)).map(c => c.targetSlug)).size
+    : 0;
 
   // Run getLinks + addLink/removeLink loops inside a single transaction so that
   // concurrent put_page calls on the same slug can't race the reconciliation:
@@ -1031,6 +1074,19 @@ async function runAutoLink(
   // hash serializes the entire reconciliation across processes. Falls
   // through on engines that don't support pg_advisory_xact_lock (PGLite is
   // single-process so there's no cross-process concern there anyway).
+  // Targets a remote writer cannot read, among those its page names and those
+  // the page already links to. Checked before the transaction: the check
+  // reads through the engine, and PGLite has one connection.
+  let checked = new Set<string>();
+  let withheld = new Set<string>();
+  let withheldCount = 0;
+  if (writer) {
+    const linked = await engine.getLinks(slug, sourceOpts);
+    checked = new Set([...out.map(c => c.targetSlug), ...linked.map(l => l.to_slug)]);
+    withheld = checked.size > 0 ? await writer.withheldTargets([...checked]) : new Set<string>();
+    withheldCount = new Set(out.filter(c => withheld.has(c.targetSlug)).map(c => c.targetSlug)).size;
+  }
+
   const result = await engine.transaction(async (tx) => {
     try {
       // hashtext (not hashtextextended): this call must behave identically on
@@ -1042,13 +1098,21 @@ async function runAutoLink(
     } catch {
       // engine doesn't support advisory locks — fall through
     }
-    const existingOut = await tx.getLinks(slug, sourceOpts);
+    let existingOut = await tx.getLinks(slug, sourceOpts);
     // Incoming: we only look at frontmatter edges WE authored (origin_slug=slug).
     // Non-frontmatter and other-page frontmatter edges survive untouched.
-    const existingInRaw = await tx.getBacklinks(slug, sourceOpts);
+    // A remote writer's reconcile touches no incoming edge at all.
+    const existingInRaw = writer ? [] : await tx.getBacklinks(slug, sourceOpts);
     const existingIn = existingInRaw.filter(
       l => l.link_source === 'frontmatter' && l.origin_slug === slug,
     );
+    // A remote writer's reconcile acts only on targets checked above: an
+    // edge to a withheld target, or to one a concurrent write added since
+    // the check, is neither created nor removed.
+    if (writer) {
+      out = out.filter(c => !withheld.has(c.targetSlug));
+      existingOut = existingOut.filter(l => checked.has(l.to_slug) && !withheld.has(l.to_slug));
+    }
 
     // Reconcilable outgoing edges: markdown + our own frontmatter edges +
     // basename-resolved wikilinks (issue #972). Manual edges
@@ -1076,7 +1140,7 @@ async function runAutoLink(
     // Add outgoing edges.
     for (const c of out) {
       try {
-        await tx.addLink(
+        if (!writer?.dryRun) await tx.addLink(
           slug, c.targetSlug, c.context, c.linkType,
           c.linkSource, c.originSlug, c.originField,
           linkSourceOpts,
@@ -1114,7 +1178,7 @@ async function runAutoLink(
       const key = `${l.to_slug}\u0000${l.link_type}\u0000${l.link_source ?? 'markdown'}`;
       if (!outKeys.has(key)) {
         try {
-          await tx.removeLink(slug, l.to_slug, l.link_type, l.link_source ?? undefined, removeSourceOpts);
+          if (!writer?.dryRun) await tx.removeLink(slug, l.to_slug, l.link_type, l.link_source ?? undefined, removeSourceOpts);
           removed++;
         } catch {
           errors++;
@@ -1135,10 +1199,11 @@ async function runAutoLink(
       }
     }
 
-    return { created, removed, errors };
+    return { created, removed, errors, withheld: withheldCount };
   });
 
-  return { ...result, unresolved };
+  if (!writer) return { created: result.created, removed: result.removed, errors: result.errors, unresolved };
+  return { ...result, unresolved, leftAsText };
 }
 
 const delete_page: Operation = {

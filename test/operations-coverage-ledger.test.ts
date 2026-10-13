@@ -37,6 +37,7 @@ const LEDGER: Record<string, string> = {
   put_page: 'test/put-page-provenance.test.ts',
   patch_page: 'test/patch-page-c1.test.ts',
   append_page_event: 'test/append-page-event-c1.serial.test.ts',
+  reconcile_page_links: 'test/reconcile-page-links.test.ts',
   delete_page: 'test/pages-source-scoping-4329.test.ts',
   list_pages: 'test/list-pages-truncation.test.ts',
   list_pages_with_frontmatter: 'test/list-pages-with-frontmatter.test.ts',
