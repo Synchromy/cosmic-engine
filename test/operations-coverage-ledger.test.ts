@@ -35,7 +35,6 @@ const LEDGER: Record<string, string> = {
   forget: 'test/memory-verbs-conformance.test.ts',
   get_page: 'test/get-page-federated-scope.test.ts',
   put_page: 'test/put-page-provenance.test.ts',
-  reconcile_page_links: 'test/reconcile-page-links.test.ts',
   delete_page: 'test/pages-source-scoping-4329.test.ts',
   list_pages: 'test/list-pages-truncation.test.ts',
   restore_page: 'test/pages-source-scoping-4329.test.ts',
@@ -168,6 +167,8 @@ const LEDGER: Record<string, string> = {
   entity_identity_link: 'test/entity-identity.test.ts',
   entity_identity_unlink: 'test/entity-identity.test.ts',
   entity_identity_list: 'test/entity-identity.test.ts',
+  // cosmic-hub #610 (carried patch reconcile-page-links).
+  reconcile_page_links: 'test/reconcile-page-links.test.ts',
 };
 
 /**
