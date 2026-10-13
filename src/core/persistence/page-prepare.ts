@@ -191,7 +191,13 @@ export async function prepareFileTarget(engine: BrainEngine, row: Pick<WriteRequ
   // A normal edit may replace only the bytes represented by its read snapshot.
   // Unknown local edits require explicit import/recovery, even for force writes.
   if (before && snapshot) {
-    if (!await fileMatchesSnapshot(engine, row.slug, before.toString('utf8'), snapshot, options.activePack)) {
+    // Typed interaction appends reconcile canonical tags add-only. Tag-table
+    // enrichment/removal may differ, but every canonical content field must
+    // still match; publication rechecks the actual snapshot revision.
+    const comparison = row.operation === 'append_page_event'
+      ? { ...snapshot, tags: parseMarkdown(before.toString('utf8'), row.slug, { activePack: options.activePack }).tags }
+      : snapshot;
+    if (!await fileMatchesSnapshot(engine, row.slug, before.toString('utf8'), comparison, options.activePack)) {
       const held = await heldFileRefusal(engine, row, root, path, 'drift', options.remote === true);
       if (held) throw held;
       throw opError('source_changed', 'The canonical file contains an uncoordinated local edit.',
