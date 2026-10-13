@@ -360,6 +360,114 @@ export const OPERATION_MANIFEST: OperationMeta[] = [
     "area": "pages"
   },
   {
+    "name": "patch_page",
+    "outputRedaction": "no_stored_text",
+    "description": "Patch existing canonical Markdown using base_revision from get_page. Omitted fields survive; frontmatter_unset explicitly removes keys. Objects and arrays replace atomically. The canonical owner coordinates file publication, projection, recovery and durable request receipts. Retry with the same request_id.",
+    "params": {
+      "request_id": {
+        "type": "string",
+        "description": "UUID; retry with it on timeout."
+      },
+      "wait_ms": {
+        "type": "number",
+        "description": "Commit wait ms (0-30000, default 5000)."
+      },
+      "slug": {
+        "type": "string",
+        "required": true,
+        "description": "Existing page slug."
+      },
+      "source_id": {
+        "type": "string",
+        "required": false,
+        "description": "Source that supplied the canonical_revision. Remote callers may target only their write source."
+      },
+      "base_revision": {
+        "type": "string",
+        "required": true,
+        "description": "Exact canonical_revision returned by get_page."
+      },
+      "frontmatter_set": {
+        "type": "object",
+        "required": false,
+        "description": "Top-level frontmatter keys to set. Nested objects and arrays replace atomically."
+      },
+      "frontmatter_unset": {
+        "type": "array",
+        "required": false,
+        "items": {
+          "type": "string"
+        },
+        "description": "Top-level frontmatter keys to remove explicitly."
+      },
+      "frontmatter_set_if_empty": {
+        "type": "object",
+        "required": false,
+        "description": "Set a key only when absent, null, or a blank string."
+      }
+    },
+    "mutating": true,
+    "scope": "write",
+    "cliHints": {
+      "name": "patch-page",
+      "positional": [
+        "slug"
+      ]
+    },
+    "area": "pages"
+  },
+  {
+    "name": "append_page_event",
+    "idempotent": true,
+    "outputRedaction": "no_stored_text",
+    "description": "Append one typed interaction to an existing canonical page. The server derives caller identity and event marker, binds a caller-stable idempotency key to the full request, coordinates canonical publication, projection and recovery, and returns an immutable receipt. Historical events are placed by date and never regress last-contact metadata.",
+    "params": {
+      "slug": {
+        "type": "string",
+        "required": true,
+        "description": "Existing canonical page slug."
+      },
+      "source_id": {
+        "type": "string",
+        "required": false,
+        "description": "Write-authorized source containing the page."
+      },
+      "idempotency_key": {
+        "type": "string",
+        "required": true,
+        "description": "Stable upstream event identity, namespaced by provider and target slug."
+      },
+      "date": {
+        "type": "string",
+        "required": true,
+        "description": "Interaction date as YYYY-MM-DD."
+      },
+      "channel": {
+        "type": "string",
+        "required": true,
+        "description": "Short interaction channel label."
+      },
+      "note": {
+        "type": "string",
+        "required": true,
+        "description": "Single-line plain-text interaction summary."
+      }
+    },
+    "mutating": true,
+    "scope": "write",
+    "publishGateKey": "writer.append_page_event",
+    "cliHints": {
+      "name": "append-page-event",
+      "positional": [
+        "slug",
+        "date",
+        "channel",
+        "note"
+      ]
+    },
+    "area": "pages"
+  },
+  {
     "name": "delete_page",
     "idempotent": true,
     "outputRedaction": "no_stored_text",

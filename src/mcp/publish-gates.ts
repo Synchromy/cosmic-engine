@@ -50,6 +50,8 @@ export async function readPublishGate(
     readFailed = true;
   }
   if (dbVal != null) return dbVal === 'true';
+  // Writer gates are DB-only; host file settings cannot activate them.
+  if (!key.startsWith('mcp.')) return false;
   const mcp = config?.mcp as Record<string, unknown> | undefined;
   const fileVal = mcp?.[key.slice('mcp.'.length)];
   if (typeof fileVal === 'boolean') return fileVal;
