@@ -405,35 +405,40 @@ export const OPERATION_MANIFEST: OperationMeta[] = [
     "name": "list_pages",
     "idempotent": true,
     "outputRedaction": "retrieval",
-    "description": "List pages with filters. For 'what's recent / what did I touch this week' use sort=updated_desc. Default 50 rows (remote max 100); a full page may be truncated: continue with updated_after + updated_after_slug from the last row.",
+    "description": "List pages. For 'what did I touch this week': sort=updated_desc. Default 50 (remote max 100). If truncated, continue with last row's updated_at_iso as updated_after + updated_after_slug.",
     "params": {
       "type": {
-        "type": "string",
-        "description": "Page type."
+        "type": "string"
       },
       "tag": {
-        "type": "string",
-        "description": "Tag."
+        "type": "string"
       },
       "limit": {
         "type": "number",
-        "description": "Max rows (default 50; remote max 100)."
+        "description": "Max rows."
       },
       "offset": {
         "type": "number",
-        "description": "Rows to skip."
+        "description": "Skip rows."
       },
       "updated_after": {
         "type": "string",
-        "description": "Only pages updated after this ISO time."
+        "description": "Updated after ISO time."
       },
       "updated_after_slug": {
         "type": "string",
-        "description": "Last row's slug (with updated_after)."
+        "description": "Cursor slug."
+      },
+      "effective_after": {
+        "type": "string",
+        "description": "Subject date >= ISO; not updated_at; no undated."
+      },
+      "effective_before": {
+        "type": "string",
+        "description": "Subject effective_date <= ISO date/time; future OK."
       },
       "sort": {
         "type": "string",
-        "description": "Default updated_desc.",
         "enum": [
           "updated_desc",
           "updated_asc",
@@ -443,7 +448,7 @@ export const OPERATION_MANIFEST: OperationMeta[] = [
       },
       "include_deleted": {
         "type": "boolean",
-        "description": "Include soft-deleted pages."
+        "description": "Soft-deleted too."
       },
       "source_id": {
         "type": "string",

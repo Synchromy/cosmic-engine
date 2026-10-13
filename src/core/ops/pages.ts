@@ -490,12 +490,12 @@ const list_pages: Operation = {
     effective_after: {
       type: 'string',
       description:
-        'Subject date >= ISO date/time; undated excluded.',
+        'Subject date >= ISO; not updated_at; no undated.',
     },
     effective_before: {
       type: 'string',
       description:
-        'Subject date <= ISO date/time; future windows too.',
+        'Subject effective_date <= ISO date/time; future OK.',
     },
     sort: {
       type: 'string',
