@@ -35,7 +35,7 @@
 import type { Operation } from './contract.ts';
 import { OperationError } from './contract.ts';
 import { slugUnderBoundPrefixes } from './context.ts';
-import { reconcileLinksForWriter } from './pages.ts';
+import { reconcileLinksForWriter, type WithheldTargets } from './pages.ts';
 import { isAutoLinkEnabled, isAutoTimelineEnabled, parseTimelineEntries } from '../link-extraction.ts';
 import { privatePagesFilterFragment, resolveExcludePrivatePages } from '../search/private-visibility.ts';
 
@@ -88,12 +88,14 @@ const reconcile_page_links: Operation = {
     };
 
     const excludePrivate = await resolveExcludePrivatePages(ctx.engine, true);
-    const withheldTargets = async (slugs: string[]): Promise<Set<string>> => {
+    // FOR SHARE: the target rows stay as checked until the reconcile commits.
+    const withheldTargets: WithheldTargets = async (slugs, exec) => {
       if (!excludePrivate || slugs.length === 0) return new Set();
-      const rows = await ctx.engine.executeRaw<{ slug: string }>(
+      const rows = await exec(
         `SELECT p.slug FROM pages p
           WHERE p.source_id = $1 AND p.slug = ANY($2::text[])
-            AND NOT (${privatePagesFilterFragment('p')})`,
+            AND NOT (${privatePagesFilterFragment('p')})
+          FOR SHARE`,
         [sourceId, slugs],
       );
       return new Set(rows.map((r) => r.slug));

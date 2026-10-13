@@ -891,6 +891,13 @@ export async function autoLinkWrittenPage(
   }
 }
 
+/** Names the targets, among `slugs`, a remote writer cannot read. Runs its
+ *  query through `exec`, the reconcile's own transaction. */
+export type WithheldTargets = (
+  slugs: string[],
+  exec: (sql: string, params: unknown[]) => Promise<Array<{ slug: string }>>,
+) => Promise<Set<string>>;
+
 /**
  * The reconciliation a page written by a remote writer never got (put_page
  * skips it for `ctx.remote !== false`), run afterwards by the trusted host on
@@ -910,7 +917,7 @@ export async function reconcileLinksForWriter(
   engine: BrainEngine,
   slug: string,
   parsed: { type: PageType; compiled_truth: string; timeline: string; frontmatter: Record<string, unknown> },
-  opts: { sourceId: string; withheldTargets: (slugs: string[]) => Promise<Set<string>>; dryRun?: boolean },
+  opts: { sourceId: string; withheldTargets: WithheldTargets; dryRun?: boolean },
 ): Promise<{ created: number; removed: number; errors: number; unresolved: UnresolvedFrontmatterRef[]; withheld: number; leftAsText: number }> {
   const r = await runAutoLink(engine, slug, parsed, {
     sourceId: opts.sourceId,
@@ -940,7 +947,7 @@ async function runAutoLink(
     sourceId?: string;
     /** Set only by reconcileLinksForWriter: outbound only, withheld targets
      *  untouched, optional dry run. Absent, behaviour is unchanged. */
-    writer?: { withheldTargets: (slugs: string[]) => Promise<Set<string>>; dryRun: boolean };
+    writer?: { withheldTargets: WithheldTargets; dryRun: boolean };
   },
 ): Promise<{ created: number; removed: number; errors: number; unresolved: UnresolvedFrontmatterRef[]; withheld?: number; leftAsText?: number }> {
   const fullContent = parsed.compiled_truth + '\n' + parsed.timeline;
@@ -1035,19 +1042,6 @@ async function runAutoLink(
   // hash serializes the entire reconciliation across processes. Falls
   // through on engines that don't support pg_advisory_xact_lock (PGLite is
   // single-process so there's no cross-process concern there anyway).
-  // Targets a remote writer cannot read, among those its page names and those
-  // the page already links to. Checked before the transaction: the check
-  // reads through the engine, and PGLite has one connection.
-  let checked = new Set<string>();
-  let withheld = new Set<string>();
-  let withheldCount = 0;
-  if (writer) {
-    const linked = await engine.getLinks(slug, sourceOpts);
-    checked = new Set([...out.map(c => c.targetSlug), ...linked.map(l => l.to_slug)]);
-    withheld = checked.size > 0 ? await writer.withheldTargets([...checked]) : new Set<string>();
-    withheldCount = new Set(out.filter(c => withheld.has(c.targetSlug)).map(c => c.targetSlug)).size;
-  }
-
   const result = await engine.transaction(async (tx) => {
     try {
       // hashtext (not hashtextextended): this call must behave identically on
@@ -1067,12 +1061,19 @@ async function runAutoLink(
     const existingIn = existingInRaw.filter(
       l => l.link_source === 'frontmatter' && l.origin_slug === slug,
     );
-    // A remote writer's reconcile acts only on targets checked above: an
-    // edge to a withheld target, or to one a concurrent write added since
-    // the check, is neither created nor removed.
+    // Targets a remote writer cannot read, among those its page names and
+    // those it already links to, checked inside this transaction (the check
+    // locks the target rows, so a target cannot turn private before commit):
+    // no edge to one is created or removed.
+    let withheldCount = 0;
     if (writer) {
+      const named = [...new Set([...out.map(c => c.targetSlug), ...existingOut.map(l => l.to_slug)])];
+      const withheld = named.length > 0
+        ? await writer.withheldTargets(named, (q, params) => tx.executeRaw<{ slug: string }>(q, params))
+        : new Set<string>();
+      withheldCount = new Set(out.filter(c => withheld.has(c.targetSlug)).map(c => c.targetSlug)).size;
       out = out.filter(c => !withheld.has(c.targetSlug));
-      existingOut = existingOut.filter(l => checked.has(l.to_slug) && !withheld.has(l.to_slug));
+      existingOut = existingOut.filter(l => !withheld.has(l.to_slug));
     }
 
     // Reconcilable outgoing edges: markdown + our own frontmatter edges +
