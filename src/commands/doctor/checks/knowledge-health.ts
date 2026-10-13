@@ -374,11 +374,11 @@ async function runEffectiveDate(ctx: DoctorContext): Promise<Check[]> {
        SELECT slug, frontmatter, created_at, updated_at
          FROM sample
         WHERE effective_date_source = 'fallback'
-          AND (frontmatter ? 'event_date' OR frontmatter ? 'date' OR frontmatter ? 'published')`,
+          AND (frontmatter ? 'event_date' OR frontmatter ? 'date' OR frontmatter ? 'published' OR frontmatter ? 'created' OR frontmatter ? 'created_at' OR frontmatter ? 'date_created' OR frontmatter ? 'date created')`,
     );
     let fallbackWithFm = 0;
     for (const row of candidates) {
-      // filename: null — this arm asks "does the frontmatter ALONE have a
+      // Empty slug and filename: null — this arm asks "does the frontmatter ALONE have a
       // parseable date", independent of whichever source wins the full
       // precedence chain. Passing the row's real filename would let a
       // daily/meetings-prefixed slug's filename-first precedence (see
@@ -388,15 +388,15 @@ async function runEffectiveDate(ctx: DoctorContext): Promise<Check[]> {
       // `daily/2024-03-15-standup` + `{ date: '2024-04-01' }`, which
       // reindex-frontmatter WOULD still act on). filename=null makes
       // computeEffectiveDate fall straight through to the frontmatter
-      // fields regardless of slug prefix.
+      // fields regardless of slug prefix or directory dates.
       const recomputed = computeEffectiveDate({
-        slug: row.slug,
+        slug: '',
         frontmatter: parseFrontmatter(row.frontmatter),
         filename: null,
         updatedAt: new Date(row.updated_at),
         createdAt: new Date(row.created_at),
       });
-      if (recomputed.source === 'event_date' || recomputed.source === 'date' || recomputed.source === 'published') {
+      if (recomputed.source === 'event_date' || recomputed.source === 'date' || recomputed.source === 'published' || recomputed.source === 'created') {
         fallbackWithFm++;
       }
     }
