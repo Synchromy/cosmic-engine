@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -7,6 +7,8 @@ import { operations, OperationError, type OperationContext } from '../src/core/o
 import { resetPgliteState } from './helpers/reset-pglite.ts';
 import { resetGateway } from '../src/core/ai/gateway.ts';
 import { writePageThrough } from '../src/core/write-through.ts';
+import { importFromContent } from '../src/core/import-file.ts';
+import { acquirePageLock } from '../src/core/page-lock.ts';
 
 let engine: PGLiteEngine;
 let root: string;
@@ -59,6 +61,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  mock.restore();
   if (root && existsSync(root)) rmSync(root, { recursive: true, force: true });
 });
 
@@ -171,15 +174,19 @@ describe('patch_page C1 operation', () => {
     let releaseProjection!: () => void;
     const entered = new Promise<void>((resolve) => { projectionEntered = resolve; });
     const gate = new Promise<void>((resolve) => { releaseProjection = resolve; });
-    const delayed = Object.create(engine) as PGLiteEngine;
-    delayed.transaction = async (fn) => {
-      projectionEntered();
-      await gate;
-      return engine.transaction(fn);
-    };
-    const delayedCtx = { ...ctx(), engine: delayed };
+    const createVersion = engine.createVersion;
+    let firstVersion = true;
+    // Gate only the patch after file publication; competing mutations must run freely.
+    spyOn(engine, 'createVersion').mockImplementation(async function (this: PGLiteEngine, ...args) {
+      if (firstVersion) {
+        firstVersion = false;
+        projectionEntered();
+        await gate;
+      }
+      return createVersion.apply(this, args);
+    });
 
-    const patch = patchPage.handler(delayedCtx, {
+    const patch = patchPage.handler(ctx(), {
       slug: 'people/example-person',
       base_revision: revision,
       frontmatter_set: { role: 'Advisor' },
@@ -191,13 +198,19 @@ describe('patch_page C1 operation', () => {
     let rewriteSettled = false;
     const rewrite = writePageThrough(engine, 'people/example-person', { sourceId: 'default' })
       .finally(() => { rewriteSettled = true; });
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(rewriteSettled).toBe(false);
-    expect(readFileSync(file, 'utf8')).toContain('role: Advisor');
-
-    releaseProjection();
-    await patch;
-    await rewrite;
+    try {
+      // PGLite also queues DB reads behind the patch transaction: probe the
+      // page lock directly so DB serialization cannot hide a missing guard.
+      const competingLock = await acquirePageLock('people/example-person', { sourceId: 'default' });
+      if (competingLock) await competingLock.release();
+      expect(competingLock).toBeNull();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(rewriteSettled).toBe(false);
+      expect(readFileSync(file, 'utf8')).toContain('role: Advisor');
+    } finally {
+      releaseProjection();
+      await Promise.all([patch, rewrite]);
+    }
     expect(readFileSync(file, 'utf8')).toContain('role: Advisor');
   });
 
@@ -207,13 +220,18 @@ describe('patch_page C1 operation', () => {
     let releaseProjection!: () => void;
     const entered = new Promise<void>((resolve) => { projectionEntered = resolve; });
     const gate = new Promise<void>((resolve) => { releaseProjection = resolve; });
-    const delayed = Object.create(engine) as PGLiteEngine;
-    delayed.transaction = async (fn) => {
-      projectionEntered();
-      await gate;
-      return engine.transaction(fn);
-    };
-    const patch = patchPage.handler({ ...ctx(), engine: delayed }, {
+    const createVersion = engine.createVersion;
+    let firstVersion = true;
+    // Gate only the patch after file publication; competing mutations must run freely.
+    spyOn(engine, 'createVersion').mockImplementation(async function (this: PGLiteEngine, ...args) {
+      if (firstVersion) {
+        firstVersion = false;
+        projectionEntered();
+        await gate;
+      }
+      return createVersion.apply(this, args);
+    });
+    const patch = patchPage.handler(ctx(), {
       slug: 'people/example-person',
       base_revision: revision,
       frontmatter_set: { role: 'Advisor' },
@@ -221,13 +239,20 @@ describe('patch_page C1 operation', () => {
     await entered;
 
     let deleteSettled = false;
-    const deletion = deletePage.handler(ctx(), { slug: 'people/example-person' })
+    const deletion = deletePage.handler(ctx(), { slug: 'people/example-person', force: true })
       .finally(() => { deleteSettled = true; });
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(deleteSettled).toBe(false);
-    releaseProjection();
-    await patch;
-    await deletion;
+    try {
+      // PGLite also queues DB reads behind the patch transaction: probe the
+      // page lock directly so DB serialization cannot hide a missing guard.
+      const competingLock = await acquirePageLock('people/example-person', { sourceId: 'default' });
+      if (competingLock) await competingLock.release();
+      expect(competingLock).toBeNull();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(deleteSettled).toBe(false);
+    } finally {
+      releaseProjection();
+      await Promise.all([patch, deletion]);
+    }
 
     expect(existsSync(join(brainDir, 'people/example-person.md'))).toBe(false);
     expect((await engine.getPage('people/example-person', { sourceId: 'default', includeDeleted: true }))?.deleted_at).not.toBeNull();
@@ -285,9 +310,8 @@ describe('patch_page C1 operation', () => {
 
   test('remote sparse patch preserves private canonical facts it cannot read', async () => {
     const privateClaim = 'PRIVATE_C1_FACT_must_survive_sparse_patch';
-    await putPage.handler(ctx(), {
-      slug: 'people/private-fact-owner',
-      content: `---
+    // Trusted owner imports can preserve gate-owned markers; put_page strips them.
+    await importFromContent(engine, 'people/private-fact-owner', `---
 type: person
 title: Private Fact Owner
 privacy: world
@@ -301,11 +325,14 @@ Visible body.
 |---|-------|------|------------|------------|------------|------------|-------------|--------|---------|
 | 1 | ${privateClaim} | fact | 1.0 | private | high | 2026-01-01 |  | test |  |
 <!--- gbrain:facts:end -->
-`,
-    });
-    const visible = await getPage.handler(remoteCtx(), {
+`, { noEmbed: true, preserveGateMarkers: true, sourceId: 'default', sourcePath: 'people/private-fact-owner.md' });
+    await writePageThrough(engine, 'people/private-fact-owner', { sourceId: 'default' });
+    // Quarantine review permits the body, but remote reads still redact private facts.
+    const reviewReader = { ...remoteCtx(), auth: { sourceId: 'default', scopes: ['admin', 'read'] } };
+    const visible = await getPage.handler(reviewReader, {
       slug: 'people/private-fact-owner',
       include_content: true,
+      include_quarantined: true,
     }) as { content: string; canonical_revision: string };
     expect(visible.content).not.toContain(privateClaim);
     expect(visible.canonical_revision).toMatch(/^sha256:[0-9a-f]{64}$/);
