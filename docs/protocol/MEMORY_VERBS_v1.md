@@ -331,6 +331,28 @@ budget_used?, dropped_count? }`. `text` is rendered from the budget-packed sets
 (it honors the declared budget) and `since` is always normalized ISO (never the
 raw input string).
 
+### list_pages_with_frontmatter(type, where?, limit?, source_id?) — read, zero LLM
+
+Carried on the Synchromy lane (not upstream), additive: `protocol_version`
+stays 1. The newest pages of one `type` whose frontmatter holds each key in
+`where` with exactly that text value (at most 8 keys). Each row carries
+`slug`, `source_id`, `title`, `type`, `frontmatter`, `canonical_revision` and
+`updated_at`. The frontmatter is parsed from the same canonical bytes the
+revision is taken from, so a caller can decide on a row and then call
+`patch_page` with `base_revision: canonical_revision`; a row whose canonical
+bytes no longer match the filter is dropped, and the next older candidate is
+read until `limit` rows match (candidates come from one index query of at
+most 1000 rows). The index rows are the candidates, so a page
+whose index has not caught up with its canonical bytes (a `patch_page` that
+answered `projection_state: pending`) is listed once its projection lands.
+When the canonical bytes cannot
+be read, `canonical_revision` is `null` (never a content hash) and the row
+carries the index frontmatter. A YAML date is matched as the full ISO
+timestamp the index stores (`2026-10-12T00:00:00.000Z`). Source scope, private pages and the 100-row
+remote cap are exactly `list_pages`'s.
+
+Response: `{ protocol_version, pages[] }`.
+
 ## Latency classes (per verb)
 
 Published so harness authors place calls by cost, not by learning at timeout:

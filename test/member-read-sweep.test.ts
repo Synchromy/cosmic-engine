@@ -143,6 +143,8 @@ const MATRIX: Row[] = [
   { name: 'fetch', mode: 'swept', args: { id: RESTRICTED_SLUG } },
   { name: 'entity_identity_list', mode: 'swept', args: {} },
   { name: 'list_pages', mode: 'swept', args: { limit: 100 } },
+  // cosmic patch list-pages-with-frontmatter (C-137): same scope as list_pages, plus frontmatter.
+  { name: 'list_pages_with_frontmatter', mode: 'swept', args: { type: 'note', limit: 100 } },
   { name: 'search', mode: 'swept', args: { query: RESTRICTED, limit: 20 } },
   { name: 'query', mode: 'swept', args: { query: RESTRICTED, limit: 20 } },
   { name: 'get_tags', mode: 'swept', args: { slug: RESTRICTED_SLUG } },
