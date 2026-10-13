@@ -6,6 +6,7 @@ import { OperationError } from '../ops/contract.ts';
 import { assertC1CreateAdmissible, isC1ContainmentEnabled, isC1RevisionGuardEnabled } from '../ops/pages-c1.ts';
 import { applySparsePagePatch, CanonicalMutationError, exactCanonicalRevision, readCanonicalPage, type SparsePagePatch } from '../canonical-page-mutations.ts';
 import { parseMarkdown, type ParseOpts } from '../markdown.ts';
+import { GATE_OWNED_FRONTMATTER_KEYS } from '../import-screen.ts';
 import { loadActivePackForEngine } from '../schema-pack/engine-resolution.ts';
 import { sealPageTextProjection } from '../page-state/projections.ts';
 import { prepareFileTarget } from './page-prepare.ts';
@@ -48,7 +49,8 @@ export async function prepareC1PagePatch(engine: BrainEngine, row: WriteRequest)
   const before = readFileSync(target.path, 'utf8');
   if (exactCanonicalRevision(before) !== row.intent.base_revision) throw new OperationError('revision_conflict',
     'The canonical page changed since base_revision was read.', 'Read get_page again and retry against its canonical_revision.');
-  const derived = new Set(['trust_tier', ...pack.manifest.frontmatter_links.filter(rule => rule.page_type === snapshot.page.type).flatMap(rule => rule.fields)]);
+  const derived = new Set(['trust_tier', ...GATE_OWNED_FRONTMATTER_KEYS,
+    ...pack.manifest.frontmatter_links.filter(rule => rule.page_type === snapshot.page.type).flatMap(rule => rule.fields)]);
   let content: string;
   try { content = applySparsePagePatch(before, slug, row.intent as SparsePagePatch, derived); }
   catch (error) {
