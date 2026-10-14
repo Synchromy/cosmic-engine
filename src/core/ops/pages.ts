@@ -480,6 +480,23 @@ const list_pages: Operation = {
       type: 'string',
       description: "Last row's slug (with updated_after).",
     },
+    // Same move as updated_after above: effective_after/effective_before have
+    // been on PageFilters and implemented in both engines since v0.46.25.0
+    // (055ac6c75, 2026-08-21), with
+    // an index on COALESCE(effective_date, updated_at) put there for them, but
+    // were never surfaced on this tool. An agent could therefore ask when a
+    // page CHANGED but not when its subject HAPPENS, so answering "what is on
+    // next week" meant listing pages and reading each one to find out.
+    effective_after: {
+      type: 'string',
+      description:
+        'Subject date >= ISO.',
+    },
+    effective_before: {
+      type: 'string',
+      description:
+        'Subject date <= ISO; future OK.',
+    },
     sort: {
       type: 'string', description: 'Default updated_desc.',
       enum: [...LIST_PAGES_SORT_VALUES],
@@ -575,10 +592,35 @@ const list_pages: Operation = {
       includeDeleted: (p.include_deleted as boolean) === true,
       updated_after: updatedAfterKeyset ? undefined : updatedAfter,
       updatedAfterKeyset,
+      effective_after: typeof p.effective_after === 'string' ? p.effective_after : undefined,
+      effective_before: typeof p.effective_before === 'string' ? p.effective_before : undefined,
       sort,
       excludePrivate,
       listColumnsOnly: true,
       ...scope,
+    }).catch(async (e: unknown) => {
+      if (!isDatetimeInputError(e)) throw e;
+      // Reuse #6103's database parser and error contract for the new bounds.
+      // Probe only after a cast failure, to identify the offending parameter
+      // without extra queries on successful listings or blaming updated_after.
+      for (const param of ['effective_after', 'effective_before'] as const) {
+        const value = p[param];
+        if (typeof value !== 'string') continue;
+        try {
+          await ctx.engine.executeRaw('SELECT $1::timestamptz', [value]);
+        } catch (boundError: unknown) {
+          if (!isDatetimeInputError(boundError)) throw boundError;
+          const example = '2026-08-11T00:00:00Z';
+          throw invalidParam(ctx, 'list_pages', param, `list_pages: ${param} is not a date or timestamp the database can read.`, {
+            def: list_pages.params[param], example,
+            fix: readFix('Lists pages filtered by a well-formed subject timestamp.', {
+              argv: ['gbrain', 'list', `--${param.replace(/_/g, '-')}`, example, '--limit', '1'],
+              mcp: { tool: 'list_pages', arguments: { [param]: example, limit: 1 } },
+            }),
+          });
+        }
+      }
+      throw e;
     }).catch((e: unknown) => {
       // #6103: an updated_after the database cannot parse is the caller's input, not a server fault.
       if (updatedAfter === undefined || !isDatetimeInputError(e)) throw e;
@@ -619,6 +661,10 @@ const list_pages: Operation = {
       title: pg.title,
       updated_at: pg.updated_at,
       updated_at_iso: pg.updated_at_iso,
+      // Returned when set, like deleted_at above. A caller that asked for a
+      // window needs to know WHICH day each row falls on; without it the
+      // coming-week answer is a list of titles in no particular order.
+      ...(pg.effective_date ? { effective_date: pg.effective_date } : {}),
       ...(pg.deleted_at ? { deleted_at: pg.deleted_at } : {}),
     }));
   },
