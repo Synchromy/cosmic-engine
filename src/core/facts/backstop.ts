@@ -62,6 +62,7 @@ import { decideFactWrite } from '../write-gate-store.ts';
 
 // The notability-filter vocabulary lives in notability-filter.ts; re-exported for existing importers.
 export { NOTABILITY_FILTERS, coerceNotabilityFilter, type FactNotabilityFilter } from './notability-filter.ts';
+import { derivesFrom, RESTRICTED_SOURCE_REASON } from '../restricted-no-derive.ts';
 
 /**
  * Context cell for a fact whose entity came from the bare-name
@@ -154,7 +155,7 @@ export type FactsBackstopResult =
       mode: 'queue';
       enqueued: boolean;
       queueDepth: number;
-      skipped?: 'extraction_disabled' | 'extraction_unavailable' | 'queue_overflow' | 'queue_shutdown' | `eligibility_failed:${string}`;
+      skipped?: 'extraction_disabled' | 'extraction_unavailable' | 'queue_overflow' | 'queue_shutdown' | 'restricted_source' | `eligibility_failed:${string}`;
     }
   | {
       mode: 'inline';
@@ -163,7 +164,7 @@ export type FactsBackstopResult =
       superseded: number;
       fact_ids: number[];
       write_requests?: WriteReceipt[];
-      skipped?: 'extraction_disabled' | 'extraction_unavailable' | `eligibility_failed:${string}`;
+      skipped?: 'extraction_disabled' | 'extraction_unavailable' | 'restricted_source' | `eligibility_failed:${string}`;
       /** Set when the LLM extraction step failed non-transport-fatally (see runPipelineWithBody). */
       skipped_reason?: import('./extract.ts').ExtractFailureReason;
       /** #5575 B3: rows the write gate flagged, held or rejected (unmanaged path). */
@@ -321,6 +322,12 @@ export async function runFactsBackstop(
   ctx: FactsBackstopCtx,
 ): Promise<FactsBackstopResult> {
   const mode = ctx.mode ?? 'queue';
+
+  if (!derivesFrom(ctx.sourceId)) {
+    return mode === 'queue'
+      ? { mode: 'queue', enqueued: false, queueDepth: 0, skipped: RESTRICTED_SOURCE_REASON }
+      : { mode: 'inline', inserted: 0, duplicate: 0, superseded: 0, fact_ids: [], skipped: RESTRICTED_SOURCE_REASON };
+  }
 
   // --- Eligibility + kill-switch gates (run before any LLM cost) ---
   const { isFactsExtractionEnabled } = await import('./extract.ts');
@@ -530,6 +537,11 @@ export async function runFactsPipeline(
   /** #5575 B3: rows the write gate flagged, held or rejected (unmanaged path). */
   write_gate?: GateTally;
 }> {
+  // C-72: every raw-turn entry (extract_facts, sweep, checkpoint harvest,
+  // context engine) derives nothing from a member-hidden source.
+  if (!derivesFrom(ctx.sourceId)) {
+    return { inserted: 0, duplicate: 0, superseded: 0, fact_ids: [], entity_slugs: [] };
+  }
   return runPipelineWithBody({
     turnText,
     isDreamGenerated: false,

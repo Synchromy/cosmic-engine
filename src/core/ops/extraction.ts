@@ -16,6 +16,7 @@ import { sourceScopeOpts } from './context.ts';
 import { unverifiedExtractionFragment, isUnverifiedExtraction, EXTRACTION_STATUS_KEY, STATUS_VERIFIED } from '../extraction-review.ts';
 import { buildVisibilityClause } from '../search/sql-ranking.ts';
 import { maintenanceTransaction } from '../persistence/attribution.ts';
+import { derivesFrom, RESTRICTED_SOURCE_REASON } from '../restricted-no-derive.ts';
 
 // ---------------------------------------------------------------------------
 // Extraction quarantine lane (issue #160)
@@ -65,6 +66,9 @@ const extract_entities: Operation = {
     // direct authoritative write, and even then the caller must opt in
     // explicitly. Remote/unset trust → quarantine lane, flag ignored.
     const trusted = ctx.remote === false && p.trusted_extraction === true;
+    if (!derivesFrom(ctx.sourceId)) {
+      return { status: 'skipped', reason: RESTRICTED_SOURCE_REASON, trusted, count: 0, entities_found: 0, truncated: false, entities: [] };
+    }
     const text = p.text as string;
     // Resource guards: the greedy name regex on a huge paste can yield tens
     // of thousands of "entities", each costing several DB round-trips. Cap
