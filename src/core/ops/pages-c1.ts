@@ -12,8 +12,11 @@ import { WRITE_REQUEST_PARAM, WRITE_WAIT_PARAM } from '../persistence/params.ts'
 import type { BrainEngine } from '../engine.ts';
 import { parseMarkdown } from '../markdown.ts';
 import {
+  canonicalMutationReceiptId,
+  CanonicalMutationError,
   type SparsePagePatch,
 } from '../canonical-page-mutations.ts';
+import { validateCanonicalInteractionEvent } from '../canonical-page-events.ts';
 import { OperationError } from './contract.ts';
 import type { Operation, OperationContext } from './contract.ts';
 import {
@@ -65,6 +68,44 @@ export async function isC1RevisionGuardEnabled(engine: BrainEngine): Promise<boo
   } catch {
     return false;
   }
+}
+
+async function isAppendPageEventEnabled(engine: BrainEngine): Promise<boolean> {
+  try {
+    return enabledConfigValue(await engine.getConfig('writer.append_page_event'));
+  } catch {
+    return false;
+  }
+}
+
+function canonicalMutationPrincipal(ctx: OperationContext): string {
+  if (ctx.viaSubagent === true) {
+    if (Number.isInteger(ctx.subagentId) && (ctx.subagentId ?? 0) > 0) return `subagent:${ctx.subagentId}`;
+    throw new OperationError(
+      'authority_required',
+      'append_page_event requires a server-issued subagent identity.',
+      'Retry through a correctly attributed subagent job.',
+    );
+  }
+  if (ctx.auth?.clientId) return `oauth:${ctx.auth.clientId}`;
+  if (ctx.remote === false) return 'local-owner';
+  if (ctx.transport === 'stdio') return 'stdio-local';
+  throw new OperationError(
+    'unknown_transport',
+    'append_page_event requires an authenticated or server-attributed caller identity.',
+    'Use OAuth, the local owner CLI, or local stdio MCP.',
+  );
+}
+
+function assertSourceInWriteGrant(ctx: OperationContext, sourceId: string): void {
+  if (ctx.remote === false) return;
+  const writeAuthority = ctx.auth?.sourceId ?? ctx.sourceId;
+  if (sourceId === writeAuthority) return;
+  throw new OperationError(
+    'permission_denied',
+    `source '${sourceId}' is outside your write authority`,
+    'Federated read grants do not confer write authority.',
+  );
 }
 
 export function assertC1CreateAdmissible(
@@ -174,4 +215,84 @@ export const patchPageOperation: Operation = {
 
   },
   cliHints: { name: 'patch-page', positional: ['slug'] },
+};
+
+/** Append one typed interaction to an existing canonical page exactly once. */
+export const appendPageEventOperation: Operation = {
+  name: 'append_page_event',
+  idempotent: true,
+  outputRedaction: 'no_stored_text',
+  description: 'Append one typed interaction to an existing canonical page. The server derives caller identity and event marker, binds a caller-stable idempotency key to the full request, coordinates canonical publication, projection and recovery, and returns an immutable receipt. Historical events are placed by date and never regress last-contact metadata.',
+  params: {
+    slug: { type: 'string', required: true, description: 'Existing canonical page slug.' },
+    source_id: { type: 'string', required: false, description: 'Write-authorized source containing the page.' },
+    idempotency_key: { type: 'string', required: true, description: 'Stable upstream event identity, namespaced by provider and target slug.' },
+    date: { type: 'string', required: true, description: 'Interaction date as YYYY-MM-DD.' },
+    channel: { type: 'string', required: true, description: 'Short interaction channel label.' },
+    note: { type: 'string', required: true, description: 'Single-line plain-text interaction summary.' },
+  },
+  mutating: true,
+  scope: 'write',
+  publishGateKey: 'writer.append_page_event',
+  handler: async (ctx, p) => {
+    const slug = p.slug as string;
+    validatePageSlug(slug);
+    enforceSubagentSlugFence(ctx, slug, 'append_page_event');
+    enforceClientSlugFence(ctx, slug, 'append_page_event');
+    const requestedSource = parseSourceIdParam(p.source_id, 'append_page_event');
+    const sourceId = requestedSource ?? ctx.sourceId ?? 'default';
+    assertSourceInWriteGrant(ctx, sourceId);
+    const principalId = canonicalMutationPrincipal(ctx);
+    const rawIdempotencyKey = p.idempotency_key;
+    if (typeof rawIdempotencyKey !== 'string'
+      || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(rawIdempotencyKey)) {
+      throw new OperationError('invalid_params', 'append_page_event requires a single-line idempotency_key of 1 to 512 characters.');
+    }
+    const idempotencyKey = rawIdempotencyKey.trim();
+    if (idempotencyKey.length < 1 || idempotencyKey.length > 512) {
+      throw new OperationError('invalid_params', 'append_page_event requires a single-line idempotency_key of 1 to 512 characters.');
+    }
+    const semanticRequest = { date: p.date, channel: p.channel, note: p.note };
+    const eventToken = canonicalMutationReceiptId(principalId, sourceId, idempotencyKey);
+    try {
+      validateCanonicalInteractionEvent({
+        date: p.date as string,
+        channel: p.channel as string,
+        note: p.note as string,
+        eventToken,
+      });
+    } catch (error) {
+      if (error instanceof CanonicalMutationError) throw new OperationError('invalid_params', error.message);
+      throw error;
+    }
+    if (!await isAppendPageEventEnabled(ctx.engine)) {
+      throw new OperationError(
+        'unavailable',
+        'append_page_event is installed but not activated for this brain.',
+        'Keep the writer on its reviewed source-only adapter until the append-event conformance gate is approved.',
+      );
+    }
+    if (ctx.dryRun) {
+      return { dry_run: true, action: 'append_page_event', slug, source_id: sourceId };
+    }
+    // The canonical owner owns the file, projection, crash recovery and receipt.
+    // Namespace the durable request by the server-derived event identity.
+    if (!ctx.auth?.principal) await initializeLocalPersistence({ ...ctx, auth: undefined });
+    const principal = await requestPrincipalForContext(ctx);
+    const hash = eventToken.slice('sha256:'.length);
+    const requestId = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+    const prior = await getWriteRequest(ctx.engine, principal, requestId);
+    if (!prior && !await ctx.engine.getPage(slug, { sourceId })) {
+      throw new OperationError('page_not_found', `Page not found: ${slug}`, 'append_page_event updates existing pages only.');
+    }
+    const result = await submitPageMutation(ctx, {
+      operation: 'append_page_event',
+      params: { slug, source_id: sourceId, request_id: requestId,
+        idempotency_key: idempotencyKey, principal_id: principalId,
+        event_token: eventToken, ...semanticRequest },
+    });
+    return { ...result, status: prior?.state === 'committed' ? 'replayed' : result.status };
+
+  },
+  cliHints: { name: 'append-page-event', positional: ['slug', 'date', 'channel', 'note'] },
 };

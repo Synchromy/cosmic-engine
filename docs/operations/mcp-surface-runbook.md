@@ -83,13 +83,17 @@ never a shell profile: an inherited `GBRAIN_SURFACE` overrides every pinned
 
 Gated ops (`Operation.publishGateKey`): `list_skills` / `get_skill` /
 `list_brain_skillpack` (`mcp.publish_skills`) and `advisor`
-(`mcp.publish_advisor`). Both gates default OFF for remote HTTP callers: the
-ops are hidden from remote tools/list AND denied at call time. The read-only
-advisor defaults ON for the owner's local stdio server (an explicit `false`
-hides it there too).
+(`mcp.publish_advisor`), plus the typed interaction writer
+`append_page_event` (`writer.append_page_event`). Gates default OFF for
+remote HTTP callers: the ops are hidden from remote tools/list AND denied
+at call time. The read-only advisor defaults ON for the owner's local
+stdio server (an explicit `false` hides it there too). The two `mcp.*`
+gates have the documented DB-over-file fallback; the writer gate is
+DB-only so copying a host config file cannot activate a mutation surface.
 
 ```bash
 gbrain config set mcp.publish_skills true      # or mcp.publish_advisor
+gbrain config set writer.append_page_event true
 ```
 
 **Expected outcome:** the very next tools/list from any token includes the
