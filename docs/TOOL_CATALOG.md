@@ -4,7 +4,7 @@
 <!-- Regenerate: bun run scripts/generate-tool-catalog.ts -->
 <!-- Freshness-guarded by scripts/check-tool-catalog-fresh.sh (bun run verify). -->
 
-Every non-localOnly operation on the MCP surface: 144 tools across 24 areas. **Starter** marks membership in the ~40-op `starter` surface (`src/mcp/surface.ts`); **Gate** names the config key that must be true before remote callers see/call the op (`gbrain config set <key> true`). What a given token actually sees is further filtered per request by scope, bound-client fence, publish gates, and the per-client surface — see `docs/operations/mcp-surface-runbook.md`. Area names are non-contractual groupings.
+Every non-localOnly operation on the MCP surface: 146 tools across 24 areas. **Starter** marks membership in the ~41-op `starter` surface (`src/mcp/surface.ts`); **Gate** names the config key that must be true before remote callers see/call the op (`gbrain config set <key> true`). What a given token actually sees is further filtered per request by scope, bound-client fence, publish gates, and the per-client surface — see `docs/operations/mcp-surface-runbook.md`. Area names are non-contractual groupings.
 
 ## admin
 
@@ -167,6 +167,7 @@ Every non-localOnly operation on the MCP surface: 144 tools across 24 areas. **S
 
 | Tool | Description | Scope | Starter | Gate |
 |---|---|---|---|---|
+| `append_page_event` | Append one typed interaction to an existing canonical page. | write | yes | `writer.append_page_event` |
 | `cancel_write_request` | Cancel your accepted write before it publishes. | write | yes |  |
 | `capture` | Quick note ("just remember this"): auto-slugged under inbox/ by date + content hash, so recapturing is idempotent. | write | yes |  |
 | `delete_page` | Soft-delete a page and remove its markdown file from the source working tree (the source local_path, or sync.repo_path when the source has none). | write |  |  |
@@ -180,6 +181,7 @@ Every non-localOnly operation on the MCP surface: 144 tools across 24 areas. **S
 | `list_page_purges` | Owner-only (`gbrain pages purges list`). | admin |  |  |
 | `list_pages` | List pages with filters. | read | yes |  |
 | `list_write_requests` | List your write receipts in one source, newest first. | write | yes |  |
+| `patch_page` | Patch existing canonical Markdown using base_revision from get_page. | write |  |  |
 | `put_page` | Complete content REPLACES the whole page: read get_page include_content:true; send its revision as expected_revision. | write | yes |  |
 | `put_pages` | Write up to 50 complete Markdown pages (8 MB total) in one call; use instead of put_page for more than 3 pages. | write |  |  |
 | `put_raw_data` | Store a raw provider payload (API response JSON) alongside a page, keyed by source. | write |  |  |

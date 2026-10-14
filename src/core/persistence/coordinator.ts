@@ -299,7 +299,7 @@ export async function publishMutation(engine: BrainEngine, row: WriteRequest, pr
     // C1 shares the source-scoped page lock with legacy canonical writers.
     // The canonical owner's worktree lock must precede it, and both remain
     // held through publication, projection, receipt commitment and recovery.
-    if (row.operation === 'patch_page') {
+    if (row.operation === 'patch_page' || row.operation === 'append_page_event') {
       pageLock = await acquirePageLock(row.slug, { sourceId: row.source_id, timeoutMs: 30_000 });
       if (!pageLock) {
         await releaseUnpublishedClaim(engine, row, 'writer_busy');
