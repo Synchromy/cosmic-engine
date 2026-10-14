@@ -10,6 +10,8 @@
  * Hermetic: in-memory PGLite, embed transport stubbed (openai 3-large, $0.13/MTok).
  */
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
+import { estimateEmbedTokens } from '../src/core/chunkers/token-estimate.ts';
+import { installPageEmbeddings, readProjectionSnapshot } from '../src/core/page-state/projections.ts';
 import { PGLiteEngine } from '../src/core/pglite-engine.ts';
 import { dispatchToolCall, summarizeMcpParams } from '../src/mcp/dispatch.ts';
 import { executeRawJsonb } from '../src/core/sql-query.ts';
@@ -18,6 +20,7 @@ import { configureGateway, resetGateway, __setEmbedTransportForTests } from '../
 
 let engine: PGLiteEngine;
 let embedCalls = 0;
+let observeEmbedding: ((values: string[]) => Promise<void>) | undefined;
 
 beforeAll(async () => {
   configureGateway({
@@ -26,6 +29,7 @@ beforeAll(async () => {
     env: { ...process.env, OPENAI_API_KEY: process.env.OPENAI_API_KEY || 'sk-test-stub' },
   });
   __setEmbedTransportForTests(async ({ values }: any) => {
+    await observeEmbedding?.(values);
     embedCalls += 1;
     return { embeddings: values.map(() => new Array(1536).fill(0.001)), usage: { tokens: 0 } } as any;
   });
@@ -107,4 +111,51 @@ describe('put-page-usage', () => {
     const params = { redacted: true, kind: 'object' };
     expect(requestLogParamsWithUsage('get_page', params, { content: [{ text: '{"outcome":"created"}' }] })).toBe(params);
   });
+
+  test('embedding preserves stored chunk token counts and charges their sum', async () => {
+    const slug = 'notes/stored-token-usage-probe';
+    let before: Array<{ id: number; token_count: number | null }> = [];
+    let wrappedEstimate = 0;
+    let storedTokens = 0;
+    observeEmbedding = async values => {
+      const chunks = await engine.getChunks(slug, { sourceId: 'default' });
+      before = chunks.map(chunk => ({ id: chunk.id, token_count: chunk.token_count }));
+      storedTokens = chunks.reduce((sum, chunk) => sum + (chunk.token_count ?? estimateEmbedTokens(chunk.chunk_text)), 0);
+      wrappedEstimate = values.reduce((sum, text) => sum + Math.ceil(text.length / 4), 0);
+    };
+    try {
+      const { result, row } = await callAndLog('put_page', {
+        slug, content: body('Antidisestablishmentarianism: αβγδ 日本語 🎉. '.repeat(20)),
+      });
+      const after = (await engine.getChunks(slug, { sourceId: 'default' }))
+        .map(chunk => ({ id: chunk.id, token_count: chunk.token_count }));
+      expect(before.length).toBeGreaterThan(0);
+      expect(storedTokens).toBeGreaterThan(0);
+      expect(storedTokens).not.toBe(wrappedEstimate);
+      expect(after).toEqual(before);
+      expect(result.embed_tokens).toBe(storedTokens);
+      expect(row.embed_tokens).toBe(storedTokens);
+      expect(result.embed_cost_usd).toBeCloseTo((storedTokens / 1_000_000) * 0.13, 12);
+    } finally {
+      observeEmbedding = undefined;
+    }
+  });
+});
+
+test('embedding-only installation cannot replace existing stored token counts', async () => {
+  const slug = 'notes/existing-token-count-probe';
+  await callAndLog('put_page', { slug, content: body('Preserve the stored count during embedding installation.') });
+  await engine.executeRaw(`UPDATE content_chunks SET token_count=777 WHERE page_id=(SELECT id FROM pages WHERE slug=$1 AND source_id='default')`, [slug]);
+  const prepared = await readProjectionSnapshot(engine, slug, 'default');
+  expect(prepared).not.toBeNull();
+  const before = prepared!.chunks.map(chunk => ({ id: chunk.id, token_count: chunk.token_count }));
+  expect(before.every(chunk => chunk.token_count === 777)).toBe(true);
+  const installed = await installPageEmbeddings(engine, prepared!, prepared!.chunks.map(chunk => ({
+    chunk_index: chunk.chunk_index, chunk_text: chunk.chunk_text, chunk_source: chunk.chunk_source,
+    embedding: new Float32Array(1536).fill(0.001), token_count: 12,
+  })));
+  expect(installed).toBe(true);
+  const after = (await engine.getChunks(slug, { sourceId: 'default' }))
+    .map(chunk => ({ id: chunk.id, token_count: chunk.token_count }));
+  expect(after).toEqual(before);
 });

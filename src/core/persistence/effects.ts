@@ -1,4 +1,5 @@
 import { recordPageEmbeddingUsage } from '../put-page-usage.ts';
+import { estimateEmbedTokens } from '../chunkers/token-estimate.ts';
 import { withAIAttribution } from '../ai/invocation-guard.ts';
 import { randomUUID } from 'node:crypto';
 import { targetedWithdrawalEffect, upgradeWithdrawalEffect } from './effect-targets.ts';
@@ -303,7 +304,8 @@ async function embedPage(engine: BrainEngine, config: GBrainConfig, effect: Pers
     const lease = new AbortController();
     const signal = opts.signal ? AbortSignal.any([opts.signal, lease.signal]) : lease.signal;
     const embeddingTexts = wrapChunkTextsForStoredMode(prepared.snapshot.page, pending);
-    const tokenCounts = embeddingTexts.map(text => Math.ceil(text.length / 4));
+    // Provider-free publications may leave token_count null; estimate usage only, without rewriting the stored projection.
+    const tokens = pending.reduce((sum, chunk) => sum + (chunk.token_count ?? estimateEmbedTokens(chunk.chunk_text)), 0);
     let renewing: Promise<void> | undefined;
     const renew = () => renewPersistenceEffectClaim({ executeRaw: engine.executeRawDirect.bind(engine) }, effect).then(live => {
       if (!live) lease.abort(opError('write_claim_lost', 'The embedding claim changed.',
@@ -340,7 +342,7 @@ async function embedPage(engine: BrainEngine, config: GBrainConfig, effect: Pers
         `No vectors were installed for ${snapshot.page.slug} in source ${effect.source_id}; the effect worker tries again with backoff up to its attempt limit. If it keeps failing, check the embedding provider.`,
         { fix: embeddingsFix() });
     }
-    await recordPageEmbeddingUsage(engine, effect.request_id, tokenCounts.reduce((n, count) => n + count, 0));
+    await recordPageEmbeddingUsage(engine, effect.request_id, tokens);
     const installed = await engine.transaction(async tx => {
       await guardEffectSource(tx, effect, opts.hostId);
       const [claim] = await tx.executeRaw<PersistenceEffect>('SELECT state,execution_token FROM persistence_effects WHERE id=$1 FOR UPDATE', [effect.id]);
@@ -352,7 +354,7 @@ async function embedPage(engine: BrainEngine, config: GBrainConfig, effect: Pers
       signal.throwIfAborted();
       // A partially refused page keeps its signature unstamped so `gbrain embed --stale` finds the refused chunks.
       const installed = await installPageEmbeddings(tx, prepared, pending.map((chunk, i) => ({ chunk_index: chunk.chunk_index,
-        chunk_text: chunk.chunk_text, chunk_source: chunk.chunk_source, embedding: vectors[i] ?? undefined, token_count: tokenCounts[i], model: opts.embedding?.model })),
+        chunk_text: chunk.chunk_text, chunk_source: chunk.chunk_source, embedding: vectors[i] ?? undefined, model: opts.embedding?.model })),
       refused ? undefined : signature);
       if (installed && refused) {
         // A refused chunk keeps no vector from an earlier convention, and the page reads as not fully embedded.

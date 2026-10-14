@@ -6,10 +6,10 @@
  * updated or unchanged) and what its indexing cost, so the row and the
  * put_page result can carry it. capture delegates to put_page and inherits it.
  *
- * embed_tokens is the engine's own per-chunk estimate (wrapped text length / 4,
- * the value stored in content_chunks.token_count): the embed SDK shape does not
- * surface provider usage. embed_cost_usd prices it at the configured model's
- * rate (embedding-pricing.ts).
+ * embed_tokens sums content_chunks.token_count for chunks sent to the provider,
+ * using the upstream tokenizer when a provider-free publication left it null.
+ * Stored chunk counts are never changed. embed_cost_usd prices this estimate
+ * at the configured model's rate (embedding-pricing.ts).
  */
 import { estimateEmbeddingCostUsd } from './embedding.ts';
 
@@ -19,17 +19,6 @@ export interface PutPageUsage {
   outcome: PutPageOutcome;
   embed_tokens: number;
   embed_cost_usd: number;
-}
-
-/** From importFromContent's result: only an 'imported' write changed anything. */
-export function putPageUsage(result: { status: string; outcome?: 'created' | 'updated'; embed_tokens?: number }): PutPageUsage {
-  const imported = result.status === 'imported';
-  const tokens = imported ? (result.embed_tokens ?? 0) : 0;
-  return {
-    outcome: imported ? (result.outcome ?? 'updated') : 'unchanged',
-    embed_tokens: tokens,
-    embed_cost_usd: tokens > 0 ? Number(estimateEmbeddingCostUsd(tokens).toFixed(10)) : 0,
-  };
 }
 
 const USAGE_OPS = new Set(['put_page', 'capture']);
@@ -63,7 +52,9 @@ export async function recordPageEmbeddingUsage(engine: import('./engine.ts').Bra
   [requestId, tokens, cost]);
 }
 
-/** Keep the structured receipt intact; the tool's top-level outcome names the page change. */
+// Embedding after the reply deadline updates the receipt, but the HTTP log row
+// is not backfilled: its usage is a lower bound (cosmic-hub #1477, decision 1).
+/** The top-level outcome is a string; the full receipt remains at write_request.outcome. */
 export async function pageResponseWithUsage(
   engine: import('./engine.ts').BrainEngine,
   response: Record<string, unknown>,

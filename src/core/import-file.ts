@@ -162,9 +162,6 @@ export interface ImportResult {
   /** True when the text committed but the embedding provider failed; the
    *  chunks carry NULL vectors until the stale sweep embeds them. */
   embedding_deferred?: boolean;
-  /** Usage of this import, excluding reused chunk vectors. */
-  outcome?: 'created' | 'updated';
-  embed_tokens?: number;
   /** #5988: the typed content refusal behind `error`, for callers that refuse with its code. */
   refusal?: ContentRefusal;
   /** #5988: the file imported only after quoting unreadable frontmatter values, or carries a `#`-comment value. */
@@ -849,8 +846,6 @@ export async function importFromContent(
   if (opts.prepare) return opts.prepare({
     slug, parsedPage, observedRevision: (existing as (typeof existing & { knowledge_revision?: string }) | null)?.knowledge_revision ?? null,
     noop: false, contentHash: hash, result: { slug, status: 'imported', chunks: chunks.length, parsedPage,
-      outcome: existing ? 'updated' : 'created',
-      embed_tokens: chunks.reduce((n, c, i) => n + (c.embedding && !reused.has(i) ? (c.token_count ?? 0) : 0), 0),
       ...(pageQuarantined ? { quarantined: true } : {}), ...(pageFlagged ? { flagged: true, flag_reason: pageFlagReason } : {}), ...(disposition.gate ? { gate: disposition.gate } : {}), ...fences.fields },
     validate: tx => assertPreparedFactWithdrawals(tx, txOpts.sourceId, parsed.compiled_truth, parsed.timeline || '', slug),
     apply: applyPrepared,
@@ -892,8 +887,6 @@ export async function importFromContent(
     status: 'imported',
     chunks: chunks.length,
     parsedPage,
-    outcome: existing ? 'updated' : 'created',
-    embed_tokens: chunks.reduce((n, c, i) => n + (c.embedding && !reused.has(i) ? (c.token_count ?? 0) : 0), 0),
     ...(pageQuarantined ? { quarantined: true } : {}),
     ...(pageFlagged ? { flagged: true, flag_reason: pageFlagReason } : {}),
     ...(typeWarning ? { type_warning: typeWarning } : {}),
