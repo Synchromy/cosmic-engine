@@ -391,7 +391,25 @@
         "note": "carried patch, not offered upstream: removing a Beam page's copy from the source members read (C-114, add-beam-access)"
       },
       "since": "2026-10-12",
-      "depends_on": [],
+      "depends_on": [
+        "c1-contained-mutations",
+        "idempotent-append-page-event",
+        "patch-page-type-title",
+        "effective-date-path-and-created",
+        "c1-database-canonical",
+        "sources-set-id",
+        "list-pages-effective-date",
+        "ops-expose-what-the-engine-can-do",
+        "delete-fence-fact",
+        "restricted-write-guard",
+        "move-source",
+        "restricted-no-derive",
+        "remember-resolves-entity",
+        "put-page-usage",
+        "capture-receipt-usage",
+        "mcp-phase-tag",
+        "list-pages-with-frontmatter"
+      ],
       "hub_uses": "purge_page: serve/beam-access.ts placeCopy removes a Beam page's copy from the source it must not be in (C-114, add-beam-access), through gb.call('purge_page', \u2026, { source }); not yet written",
       "tests": [
         "test/purge-page-in-source.test.ts"
