@@ -270,13 +270,13 @@ export async function installPageEmbeddings(engine: BrainEngine, prepared: Proje
         ${quoteIdentifier(column.name)}=CASE WHEN $2::text IS NULL THEN ${quoteIdentifier(column.name)} ELSE $2${vectorCastSuffix(column)} END,
         embedding_image=CASE WHEN $3::text IS NULL THEN embedding_image ELSE $3::vector END,
         embedding_input_hash=CASE WHEN $2::text IS NULL THEN embedding_input_hash ELSE $7 END,
-        embedded_at=now(),embedded_text_hash=md5(chunk_text),model=COALESCE($4,model),
+        embedded_at=now(),embedded_text_hash=md5(chunk_text),model=COALESCE($4,model),token_count=COALESCE($8::int,token_count),
         embedding_pending_since=CASE WHEN $2::text IS NULL THEN embedding_pending_since ELSE NULL END
         WHERE id=$1 AND page_id=$5 AND chunk_text=$6`,
       // Bind the full provider:model captured before the provider call. Keeping
       // an old label on a new vector prevents provenance-complete migration.
       [original.id, vector, image, chunk.model ?? (vector ? prepared.embeddingModel : null), snapshot.page.id, original.chunk_text,
-        embeddingInputHash(provenance, tier, original)]);
+        embeddingInputHash(provenance, tier, original), chunk.token_count ?? null]);
     }
     if (signature) await tx.setPageEmbeddingSignature(slug, { sourceId, signature });
     return true;
