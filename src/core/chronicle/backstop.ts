@@ -1,4 +1,4 @@
-/** Compatibility entry point; current publications decide through chronicle/ledger.ts. */
+/** Compatibility entry point kept by the carried restricted-no-derive patch for its test (upstream deleted this file); current publications decide through chronicle/ledger.ts. */
 import type { BrainEngine } from '../engine.ts';
 import { derivesFrom, RESTRICTED_SOURCE_REASON } from '../restricted-no-derive.ts';
 

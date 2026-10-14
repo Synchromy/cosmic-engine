@@ -28,12 +28,6 @@
 
 import { noteForwardProgress } from './forward-progress.ts';
 
-// Older Bun releases lack the thread counter. Keep CPU reporting available
-// there using process CPU, while newer runtimes retain main-thread accounting.
-const readCpuUsage = typeof process.threadCpuUsage === 'function'
-  ? process.threadCpuUsage.bind(process)
-  : process.cpuUsage.bind(process);
-
 export type ProgressMode = 'auto' | 'human' | 'json' | 'quiet';
 
 export interface ProgressOptions {
@@ -264,7 +258,7 @@ class Reporter implements ReporterInternal {
       total,
       done: 0,
       startedAt: now,
-      cpuAtStart: readCpuUsage(),
+      cpuAtStart: process.threadCpuUsage(),
       lastEmitMs: now,
       lastDoneEmitted: 0,
       live: null,
@@ -313,7 +307,7 @@ class Reporter implements ReporterInternal {
 
     const elapsedMs = now - s.startedAt;
     if (this.renderMode === 'json') {
-      const cpu = readCpuUsage(s.cpuAtStart);
+      const cpu = process.threadCpuUsage(s.cpuAtStart);
       const obj: Record<string, unknown> = {
         event: 'tick',
         phase: s.phase,
