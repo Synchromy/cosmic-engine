@@ -19,6 +19,7 @@
 import { isUndefinedColumnError } from '../utils.ts';
 import { suggestNearest } from '../levenshtein.ts';
 import { hasScope, operationScopesAllowed } from '../scope.ts';
+import { brandText } from '../../cosmic/brand.ts';
 import { RateLimiter } from '../../mcp/rate-limit.ts';
 import { writeSurfaceChangeAudit } from '../surface-audit.ts';
 import type { Operation, OperationContext } from './contract.ts';
