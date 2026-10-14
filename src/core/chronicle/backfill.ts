@@ -1,3 +1,4 @@
+import { NO_DERIVE_SOURCE_IDS } from '../restricted-no-derive.ts';
 /**
  * `gbrain chronicle-backfill` core (#5876, D6/E10): the history path.
  *
@@ -116,7 +117,8 @@ export async function runChronicleBackfill(engine: BrainEngine, opts: ChronicleB
     ? { campaignId: randomUUID(), attemptCapUsd: settings.jobBudgetUsd, maxAttempts, maxUsd } : null;
   const datedSince = opts.datedSince ? new Date(opts.datedSince) : null;
   const params: unknown[] = [[...CHRONICLE_TYPES], RESCUE_SLUG_PREFIXES.map((p) => `${p}%`), CHRONICLE_EXTRACTOR_VERSION];
-  let scope = '';
+  params.push([...NO_DERIVE_SOURCE_IDS]);
+  let scope = ` AND p.source_id <> ALL($${params.length}::text[])`;
   if (opts.sourceIds?.length) { params.push(opts.sourceIds); scope += ` AND p.source_id = ANY($${params.length}::text[])`; }
   else if (opts.sourceId) { params.push(opts.sourceId); scope += ` AND p.source_id = $${params.length}`; }
   if (opts.since) { params.push(opts.since); scope += ` AND p.updated_at >= $${params.length}::date`; }

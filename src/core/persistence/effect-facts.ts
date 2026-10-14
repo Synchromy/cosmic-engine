@@ -1,3 +1,4 @@
+import { derivesFrom, RESTRICTED_SOURCE_REASON } from '../restricted-no-derive.ts';
 import type { BrainEngine } from '../engine.ts';
 import type { ParsedPage } from '../import-file.ts';
 import { isFactsBackstopEligible } from '../facts/eligibility.ts';
@@ -88,6 +89,7 @@ async function bodyAlreadyOffered(engine: BrainEngine, slug: string, page: Parse
  * `before` is the page as this write found it (null for a new page).
  */
 export async function prepareFactsBackstop(engine: BrainEngine, row: WriteRequest, page: ParsedPage, before: PageSnapshot | null = null): Promise<FactsBackstopStatus> {
+  if (!derivesFrom(row.source_id)) return { skipped: RESTRICTED_SOURCE_REASON };
   const confined = derivedExtractionSkip(row.authority);
   if (confined) return { skipped: confined };
   if (!(await isFactsExtractionEnabled(engine))) return { skipped: 'extraction_disabled' };
@@ -126,7 +128,7 @@ export async function dispatchFactsBackstopEffect(engine: BrainEngine, effect: P
     await tx.executeRaw("SELECT set_config('synchronous_commit','on',true)");
     await guardEffectSource(tx, effect, hostId);
     const [row] = await tx.executeRaw<WriteRequest>('SELECT * FROM persistence_requests WHERE id=$1::uuid', [effect.request_id]);
-    let skipped: string | undefined;
+    let skipped: string | undefined = derivesFrom(effect.source_id) ? undefined : RESTRICTED_SOURCE_REASON;
     if (!row || row.state !== 'committed') skipped = 'invalid_write_request';
     if (row && !skipped) {
       try { await authorizeFactsBackstop(tx, row, true); }

@@ -2,6 +2,7 @@
  * `facts-absorb` Minion job handler (built-in; registered by registerBuiltinHandlers in src/commands/jobs.ts).
  */
 import { withAIAttribution } from '../../ai/invocation-guard.ts';
+import { derivesFrom, RESTRICTED_SOURCE_REASON } from '../../restricted-no-derive.ts';
 import type { BrainEngine } from '../../engine.ts';
 import type { MinionHandler } from '../types.ts';
 import { loadConfig, loadConfigWithEngine } from '../../config.ts';
@@ -50,6 +51,7 @@ export function makeFactsAbsorbHandler(engine: BrainEngine): MinionHandler {
     const slug = typeof job.data.slug === 'string' ? job.data.slug : '';
     if (!slug) throw new Error('facts-absorb job requires data.slug');
     const sourceId = typeof job.data.sourceId === 'string' ? job.data.sourceId : 'default';
+    if (!derivesFrom(sourceId)) return { skipped: RESTRICTED_SOURCE_REASON, slug, sourceId };
     const { readFactsBackstopJobPage } = await import('../../persistence/effect-facts.ts');
     const input = await readFactsBackstopJobPage(engine, job.data);
     if ('skipped' in input) return { skipped: input.skipped, slug, sourceId };
