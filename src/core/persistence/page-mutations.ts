@@ -1,3 +1,4 @@
+import { pageResponseWithUsage } from '../put-page-usage.ts';
 import { randomUUID } from 'node:crypto';
 import { pageQuarantinedNotice } from '../quarantine.ts';
 import { fenceNormalizedNotice, type FencesNormalized } from '../fence-repair/report.ts';
@@ -203,9 +204,15 @@ export async function submitPageMutation(ctx: OperationContext,
   const waitMs = () => wireWaitMs !== undefined ? Math.max(0, wireWaitMs - (performance.now() - arrived)) : input.waitMs ?? ctx.writeWaitMs;
   // Phase 4.2: pre-admission reads that admission rechecks come from this process's cache; a refusal the
   // cache could explain drops it and prepares the write once more, uncached, so it ends as it would without it.
+  const respond = async (settled: WriteRequest) => {
+    const response = throwIfHeld(pendingAwareResponse(ctx, settled), false);
+    if (!['put_page','capture'].includes(input.operation)) return response;
+    const budget = wireWaitMs ?? input.waitMs ?? ctx.writeWaitMs ?? 5000;
+    return pageResponseWithUsage(ctx.engine, response, settled.id, arrived + budget);
+  };
   const cached = await preadmitReads(ctx.engine);
   let prepared = await preparePageAdmission(cached ? { ...ctx, engine: cached } : ctx, { ...input, params });
-  if (prepared.prior) return throwIfHeld(pendingAwareResponse(ctx, await waitForWrite(ctx.engine, prepared.prior, ctx.config, waitMs())), false);
+  if (prepared.prior) return respond(await waitForWrite(ctx.engine, prepared.prior, ctx.config, waitMs()));
   const brainId = cached ? cachedPreadmitBrain(ctx.engine) : undefined;
   // Phase 4.4: the admission transaction runs on the warm single-write lane when it is free.
   const admit = (admission: WriteAdmission) => onPersistenceLane(ctx.engine, transaction => admitWrite(ctx.engine, admission, undefined, transaction),
@@ -216,10 +223,10 @@ export async function submitPageMutation(ctx: OperationContext,
     if (!cached || !preadmitRecheckFailed(error)) throw error;
     dropPreadmitCache(ctx.engine);
     prepared = await preparePageAdmission(ctx, { ...input, params: { ...params, request_id: prepared.admission.requestId } });
-    if (prepared.prior) return throwIfHeld(pendingAwareResponse(ctx, await waitForWrite(ctx.engine, prepared.prior, ctx.config, waitMs())), false);
+    if (prepared.prior) return respond(await waitForWrite(ctx.engine, prepared.prior, ctx.config, waitMs()));
     row = await admit(prepared.admission);
   }
-  const response = throwIfHeld(pendingAwareResponse(ctx, await waitForWrite(ctx.engine, row, ctx.config, waitMs())), false);
+  const response = await respond(await waitForWrite(ctx.engine, row, ctx.config, waitMs()));
   emitFenceNotice(ctx, response, row.slug);
   return { ...response, ...(prepared.typeWarning ? { type_warning: prepared.typeWarning } : {}), ...(prepared.slugAdvisory ? { slug_advisory: prepared.slugAdvisory } : {}) };
 }

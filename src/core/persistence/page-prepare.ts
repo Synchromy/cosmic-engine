@@ -390,6 +390,7 @@ export async function preparePageMutation(unbounded: BrainEngine, row: WriteRequ
       const file=await prepareFileTarget(engine,row,snapshot,targetDeleted ? null : serializePageToMarkdown(snapshot.page,snapshot.tags),undefined,{ activePack, remote: row.authority.remote });
       return {observedRevision,noop:true,file,...await pageDatabaseOnlyPublication(engine,row,file),
         apply:async()=>({...pageNoopAdvisories(row),status:'skipped',slug:row.slug,source_id:row.source_id,noop:true,chunks:0,chunk_skip_reason:'write_skipped',
+          ...(['put_page','capture'].includes(row.operation) ? { page_outcome:'unchanged',embed_tokens:0,embed_cost_usd:0 } : {}),
           ...(row.operation==='capture'?{channel:'capture',content_hash:p.capture_hash}:{}),...fenceRepairOutcome})};
     }
   }
@@ -454,7 +455,8 @@ export async function preparePageMutation(unbounded: BrainEngine, row: WriteRequ
         `Page ${ready.slug}, which this content duplicates, changed while the write was being prepared, so nothing was published. Read it, then submit the write again if it is still needed.`,
         pageFix(row.source_id, ready.slug));
     },
-      apply: async () => ({ status: 'duplicate', slug: duplicate.page.slug, duplicate_revision: duplicate.revision }) };
+      apply: async () => ({ status: 'duplicate', slug: duplicate.page.slug, duplicate_revision: duplicate.revision,
+        ...(['put_page','capture'].includes(row.operation) ? { page_outcome:'unchanged',embed_tokens:0,embed_cost_usd:0 } : {}) }) };
   }
   const tags = versionTags ?? [...new Set([...(snapshot?.tags ?? []), ...ready.parsedPage.tags])].sort();
   const renderedPage: Page = { ...(snapshot?.page ?? { id: 0, slug: row.slug, source_id: row.source_id, created_at: new Date(), updated_at: new Date() }), ...ready.parsedPage };
@@ -550,6 +552,7 @@ export async function preparePageMutation(unbounded: BrainEngine, row: WriteRequ
       ...(removedTimeline ? { timeline_rows_removed: timelineRowsRemovedAdvisory(row, removedTimeline) } : {}),
       status: noop ? 'skipped' : row.operation === 'restore_page' ? 'restored' : row.operation === 'revert_version' ? 'reverted' : 'created_or_updated',
       slug: row.slug, source_id: row.source_id, chunks: ready.result.chunks, noop,
+      ...(['put_page','capture'].includes(row.operation) ? { page_outcome: noop ? 'unchanged' : snapshot ? 'updated' : 'created',embed_tokens:0,embed_cost_usd:0 } : {}),
       ...(ready.result.chunks === 0 ? {chunk_skip_reason: noop ? 'write_skipped'
         : isEmbedSkipped(ready.parsedPage.frontmatter) || isQuarantined(ready.parsedPage.frontmatter) ? 'embed_skip' : 'empty_body'} : {}),
       // #6259: say the gate hid the page, not only why it has no chunks.
