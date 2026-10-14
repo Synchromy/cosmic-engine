@@ -70,13 +70,6 @@ export async function isC1RevisionGuardEnabled(engine: BrainEngine): Promise<boo
   }
 }
 
-async function isAppendPageEventEnabled(engine: BrainEngine): Promise<boolean> {
-  try {
-    return enabledConfigValue(await engine.getConfig('writer.append_page_event'));
-  } catch {
-    return false;
-  }
-}
 
 function canonicalMutationPrincipal(ctx: OperationContext): string {
   if (ctx.viaSubagent === true) {
@@ -212,7 +205,7 @@ export const patchPageOperation: Operation = {
 
     // The principal-scoped coordinator journal owns replay and publication.
     // Derive a stable UUID when older hub callers omit request_id.
-    await initializeLocalPersistence(ctx);
+    if (!ctx.auth?.principal) await initializeLocalPersistence({ ...ctx, auth: undefined });
     const principal = await requestPrincipalForContext(ctx);
     const hash = digest({ operation: 'patch_page', sourceId, slug, baseRevision, patch });
     const requestId = p.request_id ?? `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
@@ -243,7 +236,6 @@ export const appendPageEventOperation: Operation = {
   },
   mutating: true,
   scope: 'write',
-  publishGateKey: 'writer.append_page_event',
   handler: async (ctx, p) => {
     const slug = p.slug as string;
     validatePageSlug(slug);
@@ -274,13 +266,6 @@ export const appendPageEventOperation: Operation = {
     } catch (error) {
       if (error instanceof CanonicalMutationError) throw new OperationError('invalid_params', error.message);
       throw error;
-    }
-    if (!await isAppendPageEventEnabled(ctx.engine)) {
-      throw new OperationError(
-        'unavailable',
-        'append_page_event is installed but not activated for this brain.',
-        'Keep the writer on its reviewed source-only adapter until the append-event conformance gate is approved.',
-      );
     }
     if (ctx.dryRun) {
       return { dry_run: true, action: 'append_page_event', slug, source_id: sourceId };
