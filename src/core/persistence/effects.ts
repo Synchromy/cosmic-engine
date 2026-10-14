@@ -1,3 +1,5 @@
+import { recordPageEmbeddingUsage } from '../put-page-usage.ts';
+import { estimateEmbedTokens } from '../chunkers/token-estimate.ts';
 import { withAIAttribution } from '../ai/invocation-guard.ts';
 import { randomUUID } from 'node:crypto';
 import { targetedWithdrawalEffect, upgradeWithdrawalEffect } from './effect-targets.ts';
@@ -301,6 +303,9 @@ async function embedPage(engine: BrainEngine, config: GBrainConfig, effect: Pers
     opts.signal?.throwIfAborted();
     const lease = new AbortController();
     const signal = opts.signal ? AbortSignal.any([opts.signal, lease.signal]) : lease.signal;
+    const embeddingTexts = wrapChunkTextsForStoredMode(prepared.snapshot.page, pending);
+    // Provider-free publications may leave token_count null; estimate usage only, without rewriting the stored projection.
+    const tokens = pending.reduce((sum, chunk) => sum + (chunk.token_count ?? estimateEmbedTokens(chunk.chunk_text)), 0);
     let renewing: Promise<void> | undefined;
     const renew = () => renewPersistenceEffectClaim({ executeRaw: engine.executeRawDirect.bind(engine) }, effect).then(live => {
       if (!live) lease.abort(opError('write_claim_lost', 'The embedding claim changed.',
@@ -322,7 +327,7 @@ async function embedPage(engine: BrainEngine, config: GBrainConfig, effect: Pers
         await renew();
         signal.throwIfAborted();
         await assertEmbeddingEffectEnabled(engine, config);
-      }, () => (opts.embedding?.embed ?? embedBatch)(wrapChunkTextsForStoredMode(prepared.snapshot.page, pending), { abortSignal: signal, maxRetries: 0 }));
+      }, () => (opts.embedding?.embed ?? embedBatch)(embeddingTexts, { abortSignal: signal, maxRetries: 0 }));
     } catch (error) {
       if (!isEmbeddingZeroNormError(error) || error.vectors.length !== pending.length) throw error;
       refused = error;
@@ -337,6 +342,7 @@ async function embedPage(engine: BrainEngine, config: GBrainConfig, effect: Pers
         `No vectors were installed for ${snapshot.page.slug} in source ${effect.source_id}; the effect worker tries again with backoff up to its attempt limit. If it keeps failing, check the embedding provider.`,
         { fix: embeddingsFix() });
     }
+    await recordPageEmbeddingUsage(engine, effect.request_id, tokens);
     const installed = await engine.transaction(async tx => {
       await guardEffectSource(tx, effect, opts.hostId);
       const [claim] = await tx.executeRaw<PersistenceEffect>('SELECT state,execution_token FROM persistence_effects WHERE id=$1 FOR UPDATE', [effect.id]);
