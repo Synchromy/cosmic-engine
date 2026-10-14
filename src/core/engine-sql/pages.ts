@@ -419,6 +419,12 @@ export async function listPages(exec: ScopedRead, filters?: PageFilters): Promis
       ? sqlFragment`AND p.effective_date <= ${filters.effective_before}::timestamptz`
       : sqlFragment``;
 
+    // Bind each key and value so frontmatter filters are data in both engines.
+    const frontmatterCondition = Object.entries(filters?.frontmatterEquals ?? {}).reduce(
+      (acc, [key, value]) => sqlFragment`${acc} AND p.frontmatter->>(${key}::text) = ${value}::text`,
+      sqlFragment``,
+    );
+
     // v0.29: ORDER BY threading via PAGE_SORT_SQL whitelist (no SQL injection).
     const sortKey = filters?.sort && PAGE_SORT_SQL[filters.sort] ? filters.sort : 'updated_desc';
     const orderBy = trustedSql(PAGE_SORT_SQL[sortKey]);
@@ -430,7 +436,7 @@ export async function listPages(exec: ScopedRead, filters?: PageFilters): Promis
       const { rows } = await exec.run(sqlFragment`
         SELECT ${columns}, to_char(p.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at_iso FROM pages p
         ${tagJoin}
-        WHERE 1=1 ${typeCondition} ${tagCondition} ${updatedCondition} ${slugCondition} ${sourceCondition} ${deletedCondition} ${privateCondition} ${effectiveAfterCondition} ${effectiveBeforeCondition}
+        WHERE 1=1 ${typeCondition} ${tagCondition} ${updatedCondition} ${slugCondition} ${sourceCondition} ${deletedCondition} ${privateCondition} ${effectiveAfterCondition} ${effectiveBeforeCondition} ${frontmatterCondition}
         ORDER BY ${orderBy} LIMIT ${limit} OFFSET ${offset}
       `);
       return rows.map(rowToPage);

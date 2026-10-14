@@ -776,6 +776,42 @@ export const OPERATION_MANIFEST: OperationMeta[] = [
     "area": "pages"
   },
   {
+    "name": "list_pages_with_frontmatter",
+    "description": "MEMORY VERB (v1, additive): list the newest pages of one type whose frontmatter holds the given text values, each with its frontmatter and its canonical_revision (pass that to patch_page as base_revision). The frontmatter and the revision describe the same canonical snapshot. canonical_revision is null when the canonical bytes cannot be read; such a row cannot be patched until they can. Same source scope and private-page rules as list_pages. Default 50 rows; remote callers are capped at 100. protocol_version rides every response.",
+    "params": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Page type to list, e.g. \"handoff\"."
+      },
+      "where": {
+        "type": "object",
+        "description": "Frontmatter keys to text values, matched for equality, one value per key, all must match (at most 8 keys). Example: { \"status\": \"open\" }."
+      },
+      "limit": {
+        "type": "number",
+        "description": "Max results (default 50; remote callers are capped at 100)"
+      },
+      "source_id": {
+        "type": "string",
+        "description": "Scope to one source. Defaults to the caller's scope, as list_pages. '__all__' spans every source for trusted local callers; for remote callers '__all__' spans only your granted sources."
+      }
+    },
+    "scope": "read",
+    "mutating": false,
+    "idempotent": true,
+    "verb": true,
+    "cliHints": {
+      "name": "list-frontmatter",
+      "hidden": true
+    },
+    "annotations": {
+      "title": "list pages with frontmatter",
+      "readOnlyHint": true
+    },
+    "area": "memory-verbs"
+  },
+  {
     "name": "edit_page",
     "idempotent": true,
     "outputRedaction": {
