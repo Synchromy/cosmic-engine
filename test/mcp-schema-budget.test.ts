@@ -48,10 +48,10 @@ import { stdioVisibleTools } from '../src/mcp/server.ts';
 import { GBRAIN_MCP_INSTRUCTIONS } from '../src/mcp/instructions.ts';
 import { cl100kAvailable, estimateTokens } from '../src/core/chunkers/token-estimate.ts';
 
-const SERVED_STARTER_MAX_CHARS = 25_000;
+const SERVED_STARTER_MAX_CHARS = 25_150; // Upstream 25,000 plus the carried list-pages-effective-date patch's two params (measured 25,146).
 const SERVED_STARTER_MAX_TOKENS = 5_700;
 /** The whole tools/list JSON, annotations included (25,735 measured at v0.60.46.0; traverse_graph's `hops` is full-surface-only, 25,941 measured; 26,402 once mute_notice, the dismissal for the coaching notices starter sessions receive, joined starter; 26,671 with #6007's put_page wait_ms param and write guidance, which carry the put_pages hint and the receipt poll rule starter agents need; 26,679 with delta's opaque `cursor` param, paid for by trimming delta's own descriptions, model-visible 24,985). */
-const SERVED_STARTER_MAX_JSON_CHARS = 26_700;
+const SERVED_STARTER_MAX_JSON_CHARS = 26_850; // Upstream 26,700 plus the carried list-pages-effective-date patch's two params (measured 26,840).
 /** 4,042 at the cost wave + 586 for the operator contract's error protocol, notice prefix and memory loop (F1); no schema guidance moved here. */
 const INSTRUCTIONS_MAX_CHARS = 4_868; // #6007: +240 for the issue-required write guidance (put_pages, wait_ms)
 const DESCRIPTION_HARD_CAP = 1_200;
@@ -68,7 +68,7 @@ const TOOL_BUDGETS: Record<string, number> = {
   delete_skill: 810, delta: 830, edit_page: 1090, entity: 470, find_anomalies: 520, forget: 560, get_agent_job: 270,
   get_backlinks: 770, get_ingest_log: 280, get_page: 930, get_recent_salience: 660, get_skill: 910,
   get_skill_asset: 790, get_write_request: 360, join_brain: 560, leave_brain: 540, list_brain_skillpack: 230,
-  list_link_sources: 220, list_pages: 1060, list_skills: 670, list_write_requests: 450, put_page: 1460,
+  list_link_sources: 220, list_pages: 1215, list_skills: 670, list_write_requests: 450, put_page: 1460, // Upstream wording kept verbatim; two effective-date params added by the carried list-pages-effective-date patch.
   mute_notice: 460, put_skill: 1420, query: 3100, recall: 1540, remember: 1370, request_tools: 560, resolve_slugs: 410, search: 1670,
   submit_agent: 750, sync_brain_skills: 770, synthesize: 550, traverse_graph: 810, whoami: 230,
 };
@@ -123,7 +123,7 @@ async function served(publishSkills: boolean): Promise<Operation[]> {
 }
 
 describe('served starter tool list (Cat 40 configuration)', () => {
-  test('publish_skills on (the fresh-init default): 35 tools within 25,000 characters', async () => {
+  test('publish_skills on (the fresh-init default): 35 tools within 25,150 characters', async () => {
     const ops = await served(true);
     expect(ops.map(o => o.name)).toContain('get_skill');
     expect(ops.length).toBe(35);
@@ -131,7 +131,7 @@ describe('served starter tool list (Cat 40 configuration)', () => {
     expect(json(ops)).toBeLessThanOrEqual(SERVED_STARTER_MAX_JSON_CHARS);
   });
 
-  test('publish_skills off: within 25,000 characters', async () => {
+  test('publish_skills off: within 25,150 characters', async () => {
     const ops = await served(false);
     expect(ops.map(o => o.name)).not.toContain('get_skill');
     expect(size(ops)).toBeLessThanOrEqual(SERVED_STARTER_MAX_CHARS);
