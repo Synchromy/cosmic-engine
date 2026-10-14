@@ -548,6 +548,14 @@ export const OPERATION_MANIFEST: OperationMeta[] = [
         "type": "string",
         "description": "Last row's slug (with updated_after)."
       },
+      "effective_after": {
+        "type": "string",
+        "description": "Subject date >= ISO."
+      },
+      "effective_before": {
+        "type": "string",
+        "description": "Subject date <= ISO; future OK."
+      },
       "sort": {
         "type": "string",
         "description": "Default updated_desc.",
