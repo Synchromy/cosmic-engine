@@ -345,7 +345,9 @@
         "note": "no upstream PR yet; upstream-bound, offering it needs a decision"
       },
       "since": "2026-09-29",
-      "depends_on": [],
+      "depends_on": [
+        "restricted-no-derive"
+      ],
       "hub_uses": "pricing track Te1 (cosmic-hub #991, epic #985): the billing consumer classifies a row by the operation after the last colon of its phase; put_page extraction is excluded from credits (the write allowance covers it)",
       "tests": [
         "test/mcp-chat-phase.test.ts"
