@@ -8,6 +8,7 @@
 
 import type { WriteInference } from './write-inference.ts';
 import type { BrainEngine } from '../engine.ts';
+import { brandText } from '../../cosmic/brand.ts';
 import type { GBrainConfig } from '../config.ts';
 import { MEMORY_VERBS_VERSION } from '../verbs.ts';
 import { publicWriteReceipt, type WriteErrorCode, type WriteReceipt } from '../persistence/types.ts';
@@ -138,8 +139,8 @@ export class OperationError extends Error {
     return {
       error: this.code,
       code: this.canonicalCode,
-      message: this.message,
-      suggestion: this.suggestion,
+      message: brandText(this.message),
+      suggestion: this.suggestion === undefined ? undefined : brandText(this.suggestion),
       docs: this.docs,
       detail: this.detail,
       protocol_version: this.protocolVersion,

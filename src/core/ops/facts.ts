@@ -1214,6 +1214,7 @@ const forget_fact: Operation = {
  */
 const delete_fact: Operation = {
   name: 'delete_fact',
+  outputRedaction: 'no_stored_text',
   description: 'Delete one fact you wrote: its row in the page\'s Markdown facts fence and its facts row, together, under the source and page locks. Refuses unless `provenance` equals the row\'s recorded provenance exactly, the row is on a page, and the fence holds it as the database records it; a refused call changes nothing. Records no withdrawal, so the same claim can be remembered again later. To retract a wrong fact, use forget instead.',
   params: {
     id: { type: 'number', required: true, description: 'Fact id to delete (fact_id from remember or recall).' },

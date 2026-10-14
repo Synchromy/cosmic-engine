@@ -130,6 +130,7 @@ async function canonicalRow(
 
 export const listPagesWithFrontmatterOperation: Operation = {
   name: 'list_pages_with_frontmatter',
+  outputRedaction: 'retrieval',
   description:
     'MEMORY VERB (v1, additive): list the newest pages of one type whose frontmatter holds the given text values, ' +
     'each with its frontmatter and its canonical_revision (pass that to patch_page as base_revision). ' +
