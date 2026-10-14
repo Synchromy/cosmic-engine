@@ -408,7 +408,8 @@
         "put-page-usage",
         "capture-receipt-usage",
         "mcp-phase-tag",
-        "list-pages-with-frontmatter"
+        "list-pages-with-frontmatter",
+        "link-sources-both-endpoints"
       ],
       "hub_uses": "purge_page: serve/beam-access.ts placeCopy removes a Beam page's copy from the source it must not be in (C-114, add-beam-access), through gb.call('purge_page', \u2026, { source }); not yet written",
       "tests": [
