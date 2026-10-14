@@ -575,14 +575,13 @@ private source-2 body
   });
   // A private src2 fact under a slug whose page lives only in the default
   // source: the cross-source topology under test. The remember verb refuses
-  // an entity with no page in its source, so seed through the write seam.
-  const { writeSingleFact } = await import('../src/core/facts/write-single.ts');
-  await writeSingleFact(engine, SRC2, {
+  // an entity with no page in its source, so seed directly through the engine.
+  await engine.insertFact({
     fact: PRIV.src2Fact,
-    provenance: 'sweep-seed',
-    entity: WORLD_PAGE_SLUG,
+    source: 'sweep-seed',
+    entity_slug: WORLD_PAGE_SLUG,
     visibility: 'private',
-  });
+  }, { source_id: SRC2 });
   // World-visible src2 page: the federated arm's positive control — without
   // it, every src2 sentinel could pass vacuously if allowedSources fan-out
   // silently never reached source 2 (the "sweep against an empty brain
