@@ -90,6 +90,27 @@ afterAll(async () => {
 });
 
 describe('list_pages effective_after / effective_before', () => {
+  // Protect the caller-visible input error, using the real database cast.
+  // Existing timestamp-input coverage exercises only updated_after; without
+  // the effective-bound mapping these cases expose raw SQLSTATEs instead.
+  for (const param of ['effective_after', 'effective_before'] as const) {
+    for (const value of ['next week', '2026-13-45T99:00:00Z']) {
+      for (const remote of [false, true]) {
+        for (const updated_after of [undefined, iso(-1)]) {
+          test(`${param} rejects ${value} with invalid_params (remote=${remote}, updated_after=${updated_after !== undefined})`, async () => {
+            await expect(op.handler(ctxOf({ remote }), {
+              [param]: value,
+              updated_after,
+            })).rejects.toMatchObject({
+              code: 'invalid_params',
+              message: `list_pages: ${param} is not a date or timestamp the database can read.`,
+            });
+          });
+        }
+      }
+    }
+  }
+
   test('the coming week comes back in one call', async () => {
     expect(await slugs({ effective_after: iso(1), effective_before: iso(7), limit: 100 }))
       .toEqual([
