@@ -23,8 +23,35 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { operations } from '../src/core/operations.ts';
 
 const OPS_DIR = 'src/core/ops';
+// test-reads-source-ok[structural]: compare op schemas with their implementation text.
 const files = readdirSync(OPS_DIR).filter(f => f.endsWith('.ts'))
   .map(f => [f, readFileSync(`${OPS_DIR}/${f}`, 'utf8')] as const);
+
+// Upstream forwards whole parameter bags to these implementations. Keep the
+// scan confined to each cluster's actual delegates, rather than all of src/
+// (where an unrelated operation could conceal a genuinely unused parameter).
+const delegates: Record<string, string[]> = {
+  'pages.ts': ['persistence/page-mutations.ts', 'persistence/page-prepare.ts', 'persistence/timeline-omission.ts'],
+  'page-edit.ts': ['persistence/page-mutations.ts'],
+  'links.ts': ['ops/edge-temporal.ts', 'ops/backlinks-paged.ts'],
+  'timeline.ts': ['persistence/page-mutations.ts', 'persistence/semantic-pages.ts'],
+  'admin.ts': ['persistence/page-mutations.ts'],
+  'skills-catalog.ts': ['shared-skills/catalog.ts', 'shared-skills/publication.ts', 'shared-skills/manifest.ts'],
+  'purge.ts': ['facts/purge.ts', 'persistence/page-purge.ts'],
+};
+const delegateSources = Object.fromEntries(Object.entries(delegates).map(([home, paths]) => [
+  home,
+  // test-reads-source-ok[structural]: delegated parameter reads survive upstream's module split.
+  paths.map(path => readFileSync(`src/core/${path}`, 'utf8')).join('\n'),
+]));
+
+function delegateReads(home: string, key: string): boolean {
+  // Require a parameter access, not a second schema declaration or a comment
+  // naming the field. Admission also destructures wait_ms / expected_hashes.
+  const source = (delegateSources[home] ?? '').replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '');
+  return new RegExp(`\\b(?:p|params|intent|input)\\??\\.${key}\\b`).test(source)
+    || new RegExp(`\\bconst\\s*\\{[^}]*\\b${key}\\s*:`).test(source);
+}
 
 /** The file that DEFINES an op, not one that merely names it. `context.ts`
  *  carries `tool_name: 'search'` and would otherwise be mistaken for home. */
@@ -45,7 +72,7 @@ describe('an op exposes what it declares', () => {
         // The declaration is one mention; anything wired reads it again.
         // Module-wide, not handler-only: `snippet_chars` is consumed by a
         // helper the handler calls, which a handler.toString() scan misses.
-        if (home[1].split(key).length - 1 < 2) orphan.push(`${op.name}.${key} (${home[0]})`);
+        if (home[1].split(key).length - 1 < 2 && !delegateReads(home[0], key)) orphan.push(`${op.name}.${key} (${home[0]})`);
       }
     }
     expect(orphan).toEqual([]);
@@ -59,9 +86,11 @@ describe('an op exposes what the engine can do', () => {
     updated_after_keyset: 'pagination cursor, assembled by the delta verb, not asked for',
     source_ids:           'resolved from the caller auth scope; a caller naming it would widen its own grant',
     exclude_private:      'THE privacy predicate. Caller-controllable would make private pages requestable',
+    list_columns_only:    'internal SQL projection, always enabled by list_pages to avoid loading page bodies; not a result filter',
   };
 
   test('every PageFilters field is reachable from some op, or listed as internal with a reason', () => {
+    // test-reads-source-ok[structural]: enumerate the engine filter contract against the op registry.
     const types = readFileSync('src/core/types.ts', 'utf8');
     const block = types.match(/export interface PageFilters \{[\s\S]*?\n\}/)?.[0];
     expect(block, 'PageFilters not found — this test is reading the wrong file').toBeTruthy();
