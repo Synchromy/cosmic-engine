@@ -198,7 +198,7 @@ export async function forgetFactInFence(
     const ok = row.expired_at === null; // the expiry already committed above.
     if (ok && row.source_markdown_slug !== null) {
       const slug = row.source_markdown_slug;
-      await (locked ? strikeDbBody() : withPageLock(slug, strikeDbBody, { timeoutMs: 5_000 }))
+      await (locked ? strikeDbBody() : withPageLock(slug, strikeDbBody, { timeoutMs: 5_000, sourceId: row.source_id }))
         .catch(() => { /* best-effort, see above */ });
     }
     return { ok, path: 'legacy_db', reason };
@@ -295,7 +295,7 @@ export async function forgetFactInFence(
       } catch { /* degrades to the pre-#4696 window (stale until the next sync) */ }
 
       return { ok: true, path: 'fence', reason };
-    }, { timeoutMs: 5_000 });
+    }, { timeoutMs: 5_000, sourceId: row.source_id });
   };
   return hasSourceFilesystemLock(resolved.writeRoot)
     ? mirrorWithdrawal()
