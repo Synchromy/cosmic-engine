@@ -1,3 +1,5 @@
+// purge_page must clear its fact/take suppression while preserving earlier upstream purges.
+// Page-only tombstone checks miss this regression; seeded claims expose it without a new production seam.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -64,6 +66,13 @@ async function count(table: 'pages' | 'content_chunks' | 'page_versions' | 'link
   return Number(rows[0]!.count);
 }
 
+async function seedClaims(page: { id: number; slug: string }, sourceId: string): Promise<void> {
+  await engine.executeRaw(`INSERT INTO facts(source_id,fact,kind,source,source_markdown_slug,row_num)
+    VALUES ($1,$2,'fact','test',$3,1)`, [sourceId, `Fact for ${page.slug}`, page.slug]);
+  await engine.executeRaw(`INSERT INTO takes(page_id,row_num,claim,kind,holder)
+    VALUES ($1,1,$2,'take','brain')`, [page.id, `Take for ${page.slug}`]);
+}
+
 describe('purge_page in one source', () => {
   it('purges a managed soft-deleted row with its chunks, versions and links without leaving its tombstone', async () => {
     await addSource('source-a');
@@ -90,11 +99,19 @@ describe('purge_page in one source', () => {
   it('purges a managed live row with its chunks, versions and links without leaving its tombstone', async () => {
     await addSource('source-a');
     const page = await seed('notes/live', 'source-a');
+    await seedClaims(page, 'source-a');
     await engine.executeRaw('UPDATE persistence_brain SET enabled=true WHERE singleton=1');
     expect(await managedPersistenceEnabled(engine)).toBe(true);
     expect(await count('links', page.id)).toBe(1);
 
-    expect(await callPurge(localCtx(), { slug: page.slug, source_id: 'source-a' })).toMatchObject({ removed: 1, status: 'purged' });
+    const result = await callPurge(localCtx(), { slug: page.slug, source_id: 'source-a' });
+    expect(result).toMatchObject({ removed: 1, status: 'purged' });
+    expect(result).toMatchObject({ purge: { removed: { facts: 1, takes: 1 } } });
+    for (const table of ['fact_purges', 'take_purges']) {
+      expect(await engine.executeRaw(`SELECT p.* FROM ${table} p JOIN persistence_requests r ON p.request_id=r.id
+        WHERE p.source_id=$1 AND r.source_id=$1 AND r.slug=$2 AND r.request_id=$3::uuid`,
+      ['source-a', page.slug, result.request_id])).toHaveLength(0);
+    }
     expect(await engine.getPage(page.slug, { sourceId: 'source-a', includeDeleted: true })).toBeNull();
     expect(await count('content_chunks', page.id)).toBe(0);
     expect(await count('pages', page.id)).toBe(0);
@@ -141,7 +158,8 @@ describe('purge_page in one source', () => {
 
   it('preserves an earlier upstream purge tombstone for another slug in the same source', async () => {
     await addSource('source-a');
-    await engine.putPage('notes/upstream-purge', { type: 'note', title: 'Upstream purge', compiled_truth: 'Previously purged content.' }, { sourceId: 'source-a' });
+    const upstreamPage = await engine.putPage('notes/upstream-purge', { type: 'note', title: 'Upstream purge', compiled_truth: 'Previously purged content.' }, { sourceId: 'source-a' });
+    await seedClaims(upstreamPage, 'source-a');
     const page = await seed('beam/example', 'source-a');
     await engine.executeRaw('UPDATE persistence_brain SET enabled=true WHERE singleton=1');
     const snapshot = await engine.readPageSnapshot('notes/upstream-purge', { sourceId: 'source-a' });
@@ -150,10 +168,18 @@ describe('purge_page in one source', () => {
     }))).toMatchObject({ status: 'purged' });
     const earlier = await engine.executeRaw('SELECT * FROM page_purges WHERE source_id=$1 AND slug=$2', ['source-a', 'notes/upstream-purge']);
     expect(earlier.length).toBeGreaterThan(0);
+    const earlierClaims = await Promise.all(['fact_purges', 'take_purges'].map(table =>
+      engine.executeRaw(`SELECT * FROM ${table} WHERE source_id=$1 AND request_id IN
+        (SELECT request_id FROM page_purges WHERE source_id=$1 AND slug=$2)`, ['source-a', 'notes/upstream-purge'])));
+    for (const rows of earlierClaims) expect(rows).toHaveLength(1);
 
     expect(await callPurge(localCtx(), { slug: page.slug, source_id: 'source-a' })).toMatchObject({ removed: 1, status: 'purged' });
     expect([...(await readPagePurgeTombstones(engine, 'source-a')).values()]).not.toContain(page.slug);
     expect(await engine.executeRaw('SELECT * FROM page_purges WHERE source_id=$1 AND slug=$2', ['source-a', 'notes/upstream-purge'])).toEqual(earlier);
+    for (const [index, table] of ['fact_purges', 'take_purges'].entries()) {
+      expect(await engine.executeRaw(`SELECT * FROM ${table} WHERE source_id=$1 AND request_id IN
+        (SELECT request_id FROM page_purges WHERE source_id=$1 AND slug=$2)`, ['source-a', 'notes/upstream-purge'])).toEqual(earlierClaims[index]);
+    }
   });
 
   it('dry run answers without deleting a live row, its chunks, or its versions', async () => {

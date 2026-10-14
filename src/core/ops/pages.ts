@@ -504,10 +504,19 @@ const purge_page: Operation = {
         expected_revision: snapshot.revision, request_id: requestId,
       } }));
     if (result.status === 'purged') {
-      // Beam placeCopy rewrites the same content; clear only this request's tombstones (which reference the journal row ID).
-      await ctx.engine.executeRaw(`DELETE FROM page_purges p USING persistence_requests r
-        WHERE p.source_id=$1 AND p.slug=$2 AND p.request_id=r.id
-          AND r.source_id=$1 AND r.slug=$2 AND r.request_id=$3::uuid`, [sourceId, slug, requestId]);
+      // Beam placeCopy rewrites the same content; clear only this request's page, fact and take tombstones (which reference the journal row ID).
+      await ctx.engine.transaction(async tx => {
+        await tx.executeRaw('SELECT id FROM sources WHERE id=$1 FOR UPDATE', [sourceId]);
+        const cleared = await tx.executeRaw<{ request_id: string | null }>(`DELETE FROM page_purges p USING persistence_requests r
+          WHERE p.source_id=$1 AND p.slug=$2 AND p.request_id=r.id
+            AND r.source_id=$1 AND r.slug=$2 AND r.request_id=$3::uuid
+          RETURNING p.request_id::text`, [sourceId, slug, requestId]);
+        const requests = cleared.map(r => r.request_id).filter((id): id is string => !!id);
+        if (requests.length) {
+          await tx.executeRaw('DELETE FROM fact_purges WHERE source_id=$1 AND request_id=ANY($2::uuid[])', [sourceId, requests]);
+          await tx.executeRaw('DELETE FROM take_purges WHERE source_id=$1 AND request_id=ANY($2::uuid[])', [sourceId, requests]);
+        }
+      });
     }
     // A pending receipt must not claim a row has already been removed.
     return { ...result, removed: result.status === 'purged' ? 1 : 0 };
