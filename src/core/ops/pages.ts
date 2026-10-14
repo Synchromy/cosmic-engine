@@ -33,6 +33,7 @@ import { OperationError, opError, type Operation, type OperationContext } from '
 import { invalidParam, readFix } from './op-fix.ts';
 import { isDatetimeInputError } from '../utils.ts';
 import { rethrowNamingRevisionSource } from './put-page-revision-source.ts';
+import { listPagesWithFrontmatterOperation } from './pages-frontmatter.ts';
 import {
   assertExplicitSourceLive,
   enforceSubagentSlugFence,
@@ -739,4 +740,5 @@ export const pagesOperations: Operation[] = [
   get_page, put_page, patchPageOperation, appendPageEventOperation, delete_page, list_pages,
   restore_page, purge_deleted_pages, capture,
   fetch_page,
+  listPagesWithFrontmatterOperation,
 ];

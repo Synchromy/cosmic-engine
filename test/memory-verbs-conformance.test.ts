@@ -833,13 +833,14 @@ describe('fixture mirror + surface invariants', () => {
     expect(onDisk).toEqual(JSON.parse(JSON.stringify(CONFORMANCE_CASES)));
   });
 
-  it('every VERB_NAMES entry (7 as of v0.45.7) carries verb: true and nothing else does', async () => {
+  it('every VERB_NAMES entry (8: 7 as of v0.45.7 + the carried list_pages_with_frontmatter) carries verb: true and nothing else does', async () => {
     const { operations } = await import('../src/core/operations.ts');
     const verbs = operations.filter(o => o.verb === true).map(o => o.name).sort();
     expect(verbs).toEqual([...VERB_NAMES].sort());
     // An accidental verb addition/removal must be a LOUD, named failure —
-    // the frozen set is 5 core + 2 additive (context_pack, delta).
-    expect(VERB_NAMES.length).toBe(7);
+    // the frozen set is 5 core + 2 additive (context_pack, delta) + 1 additive
+    // carried patch (list_pages_with_frontmatter, cosmic-hub C-137).
+    expect(VERB_NAMES.length).toBe(8);
   });
 
   it('a pre-v0.45.7 five-verb endpoint still certifies (additive verbs skip, never fail)', async () => {
