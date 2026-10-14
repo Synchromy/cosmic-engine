@@ -346,6 +346,7 @@ const EXPECTED_OUTCOME: Record<string, Outcome> = {
   rate_answer: 'error',
   put_page: 'ok',
   put_pages: 'ok',
+  patch_page: 'error', // generic sweep omits required revision; dedicated C1 privacy test proves hidden facts survive
   delete_page: 'ok',
   restore_page: 'ok',
   capture: 'ok',
