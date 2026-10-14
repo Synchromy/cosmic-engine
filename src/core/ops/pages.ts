@@ -483,17 +483,27 @@ const purge_page: Operation = {
   scope: 'admin',
   localOnly: true,
   handler: async (ctx, p) => {
+    if (ctx.remote !== false) {
+      throw new OperationError('permission_denied', 'purge_page is only available to trusted local callers.');
+    }
     const slug = p.slug as string;
     const sourceId = p.source_id;
     if (typeof sourceId !== 'string' || sourceId.trim() === '') {
       throw new OperationError('invalid_params', 'purge_page requires a non-empty source_id.');
     }
-    if (ctx.remote !== false) {
-      throw new OperationError('permission_denied', 'purge_page is only available to trusted local callers.');
-    }
+    validatePageSlug(slug);
     if (ctx.dryRun) return { dry_run: true, action: 'purge_page', slug, source_id: sourceId };
-    const removed = await ctx.engine.deletePages([slug], { sourceId });
-    return { removed: removed.length };
+    // purge_page adapts its source-explicit contract to upstream's coordinated purge.
+    const snapshot = await ctx.engine.readPageSnapshot(slug, { sourceId, includeDeleted: true });
+    if (!snapshot) return { removed: 0 };
+    const { randomUUID } = await import('node:crypto');
+    const result = await (await import('../persistence/page-purge.ts')).finishPagePurge(ctx,
+      await submitPageMutation(ctx, { operation: 'delete_page', params: {
+        slug, source_id: sourceId, purge: true,
+        expected_revision: snapshot.revision, request_id: randomUUID(),
+      } }));
+    // A pending receipt must not claim a row has already been removed.
+    return { ...result, removed: result.status === 'purged' ? 1 : 0 };
   },
   cliHints: { name: 'purge-page', positional: ['slug'] },
 };
