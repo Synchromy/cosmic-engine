@@ -49,6 +49,7 @@ import { cliCommandOf, exitCliError, exitOnRepairFailed, unknownFlagError, usage
 import type { Notice } from '../core/agent-output.ts';
 import { opError, opOwnsSource } from '../core/ops/contract.ts';
 import { opParamValue } from './op-param-values.ts';
+import { parseTypedOpArg } from '../core/cli-util.ts';
 import { serializeMarkdown } from '../core/markdown.ts';
 import { parseGlobalFlags, setCliOptions, getCliOptions } from '../core/cli-options.ts';
 import { runCliPreflight } from '../core/cli-preflight.ts';
@@ -1116,6 +1117,15 @@ export function parseOpArgs(op: Operation, args: string[]): Record<string, unkno
 
   for (const [key, def] of Object.entries(op.params)) {
     if ((def.type !== 'object' && def.type !== 'array') || typeof params[key] !== 'string') continue;
+    // The search type filter explicitly accepts the older comma-delimited CLI
+    // spelling; JSON-only mutation arrays retain upstream's strict validation.
+    if (def.type === 'array' && key === 'types' && (op.name === 'search' || op.name === 'query')
+      && !/^[\[{]/.test((params[key] as string).trimStart())) continue;
+    if (op.name === 'patch_page') {
+      try { params[key] = parseTypedOpArg(key, def.type, params[key] as string); }
+      catch (error) { throw usageError((error as Error).message, `Pass --${key.replace(/_/g, '-')} as JSON.`); }
+      continue;
+    }
     let value: unknown;
     const jsonError = () => usageError(`--${key.replace(/_/g, '-')} requires a JSON ${def.type}.`, `Pass JSON, e.g. --${key.replace(/_/g, '-')} '${def.type === 'array' ? '["a","b"]' : '{"key":"value"}'}'.`);
     try { value = JSON.parse(params[key] as string); } catch { throw jsonError(); }
