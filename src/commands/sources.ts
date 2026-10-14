@@ -13,6 +13,7 @@
  *   gbrain sources list [--json]
  *   gbrain sources remove <id> [--yes] [--dry-run] [--keep-storage]
  *   gbrain sources rename <id> <new-name>
+ *   gbrain sources set-id <old> <new> [--confirm]
  *   gbrain sources default <id>
  *   gbrain sources attach <id>   — write .gbrain-source in CWD
  *   gbrain sources detach        — remove .gbrain-source from CWD
@@ -1104,7 +1105,8 @@ async function runRename(engine: BrainEngine, args: string[]): Promise<void> {
     process.exit(4);
   }
   await engine.executeRaw(`UPDATE sources SET name = $1 WHERE id = $2`, [newName, id]);
-  console.log(`Renamed source "${id}" display: ${src.name} → ${newName} (id is immutable).`);
+  console.log(`Renamed source "${id}" display: ${src.name} → ${newName}.`);
+  console.log(`  (This is the display name. To change the id itself: gbrain sources set-id ${id} <new>)`);
 }
 
 // ── Subcommand: default ─────────────────────────────────────
@@ -1919,6 +1921,7 @@ export async function runSources(engine: BrainEngine, args: string[]): Promise<v
     case 'set-path':   { const { runSetPath } = await import('./sources-set-path.ts'); return runSetPath(engine, rest); }
     case 'shared-skills': { const { runSourcesSharedSkills } = await import('./sources-shared-skills.ts'); return runSourcesSharedSkills(engine, rest); }
     case 'retry-held': { const { runRetryHeld } = await import('./sources-retry-held.ts'); return runRetryHeld(engine, rest); }
+    case 'set-id':     { const { runSetId } = await import('./sources-set-id.ts'); return runSetId(engine, rest); }
     case 'audit':      return runAudit(engine, rest);
     // v0.46 github-source demo (offline, privacy-clean fixtures)
     case 'demo':       { const { runSourcesDemo } = await import('./sources-demo.ts'); return runSourcesDemo(engine, rest); }
@@ -1971,7 +1974,8 @@ Subcommands:
                                     Permanently delete archived sources.
                                     Without <id>: purge all expired archives.
                                     With <id>: force-purge (requires --confirm-destructive).
-  rename <id> <new-name>            Rename display name (id is immutable).
+  rename <id> <new-name>            Rename the display name only. To change the
+                                    id itself, see set-id below.
   default <id>                      Set the brain-level default source.
   attach <id>                       Write .gbrain-source in CWD (like kubectl context).
   detach                            Remove .gbrain-source from CWD.
@@ -2000,6 +2004,9 @@ Subcommands:
                                     to the global search.mode bundle).
   set-trust <id> <tier>|--clear     Trust default for this source's sync and import (operator_curated or lower).
   set-path <id> <path> [--force]    Repair a source's local_path pointer
+  set-id <old> <new> [--confirm]    Change a source's IDENTITY everywhere it is
+                                    recorded. Previews without --confirm. Every
+                                    joined device re-syncs afterwards.
                                     (DB column only, never touches disk).
                                     --force skips the overlapping-path guard.
                                     Rejects a missing source or a path that
