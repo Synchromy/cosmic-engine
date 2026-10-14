@@ -22,6 +22,7 @@ import { derivedWriteTrust } from './trust/taint.ts';
 import { derivedGateConfig, derivedGateInput, recordTimelineFlag, timelineRowAllowed } from './trust/derived-gate.ts';
 import { assessTimelineForGate } from './write-gate.ts';
 import { storedTrustTier, type TaintInput } from './trust/tier.ts';
+import { derivesFrom } from './restricted-no-derive.ts';
 
 export interface ExtractTimelineFromMeetingsOpts {
   dryRun?: boolean;
@@ -183,6 +184,7 @@ export async function extractTimelineFromMeetings(
   }
 
   for (const meeting of meetings) {
+    if (!derivesFrom(meeting.source_id)) continue;
     if (sinceMs !== null) {
       const updatedMs = new Date(meeting.updated_at).getTime();
       if (Number.isFinite(updatedMs) && updatedMs <= sinceMs) continue;

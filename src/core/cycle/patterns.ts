@@ -53,6 +53,7 @@ import { publishOrHold } from '../persistence/accepted-pending.ts';
 import { derivedMaintenanceTransaction, isExternalTier, type DerivationDeclaration } from '../trust/taint.ts';
 import { storedTrustTier, type TaintInput } from '../trust/tier.ts';
 import { patternsDerivation, type Derivation } from './dream-taint.ts';
+import { NO_DERIVE_SOURCE_IDS } from '../restricted-no-derive.ts';
 
 export interface PatternsPhaseOpts {
   brainDir: string;
@@ -607,9 +608,10 @@ async function gatherReflections(
       WHERE slug LIKE $2
         AND source_id = $3 AND deleted_at IS NULL AND COALESCE(frontmatter->>'visibility','') <> 'private'
         AND updated_at >= $1::timestamptz
+        AND source_id <> ALL($4::text[])
       ORDER BY updated_at DESC
       LIMIT 100`,
-    [since, `${sourceSlugPrefix}/%`, sourceId],
+    [since, `${sourceSlugPrefix}/%`, sourceId, [...NO_DERIVE_SOURCE_IDS]],
   );
   return rows.map(r => ({
     slug: r.slug,
