@@ -6,7 +6,7 @@ import { readCredentials, writeCredentials, type HarnessCredentials } from './cr
  * commits, so losing an HTTP response never requires a duplicate or a rotation.
  * A journal is deliverable only after the caller verifies its live client row. */
 export function deliveryPath(clientId: string): string {
-  if (!/^gbrain_cl_[A-Za-z0-9_-]+$/.test(clientId)) throw new Error('Invalid delivery client');
+  if (!/^(?:gbrain|cosmic)_cl_[A-Za-z0-9_-]+$/.test(clientId)) throw new Error('Invalid delivery client');
   return join(configDir(), 'credential-deliveries', `${clientId}.json`);
 }
 

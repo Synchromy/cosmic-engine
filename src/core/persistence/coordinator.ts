@@ -18,6 +18,7 @@ import type { WaitingOn } from './claim-phase.ts';
 import { preparationKind } from './preparation-budget.ts';
 import { isTerminal, principalKey, requestPrincipal, recoveryFiles, type FileRecoveryRecord, type RecoveryRecord, type WriteRequest } from './model.ts';
 import type { NativeLockHandle } from './native-lock.ts';
+import { acquirePageLock, type PageLockHandle } from '../page-lock.ts';
 import { withCoordinatedWrite } from './context.ts';
 import { lockCoreSources } from './core-guard.ts';
 import { publicationAttribution } from './attribution.ts';
@@ -257,6 +258,7 @@ export async function publishMutation(engine: BrainEngine, row: WriteRequest, pr
   hostId = localHostId(), callerHooks: PublicationHooks = {}): Promise<WriteRequest> {
   const hooks = withFaultPoints(callerHooks);
   let lock: NativeLockHandle | null = null;
+  let pageLock: PageLockHandle | null = null;
   let releaseCapacity: (() => void) | null = null;
   let binding: WorktreeBinding | null = null;
   let recovery: RecoveryRecord | null = null;
@@ -291,6 +293,16 @@ export async function publishMutation(engine: BrainEngine, row: WriteRequest, pr
       [row.worktree_id, row.id]);
       if (blocked.length) {
         await releaseUnpublishedClaim(engine, row, 'recovery_required');
+        return (await getWriteRequestById(engine, row.id))!;
+      }
+    }
+    // C1 shares the source-scoped page lock with legacy canonical writers.
+    // The canonical owner's worktree lock must precede it, and both remain
+    // held through publication, projection, receipt commitment and recovery.
+    if (row.operation === 'patch_page' || row.operation === 'append_page_event') {
+      pageLock = await acquirePageLock(row.slug, { sourceId: row.source_id, timeoutMs: 30_000 });
+      if (!pageLock) {
+        await releaseUnpublishedClaim(engine, row, 'writer_busy');
         return (await getWriteRequestById(engine, row.id))!;
       }
     }
@@ -432,7 +444,7 @@ export async function publishMutation(engine: BrainEngine, row: WriteRequest, pr
       return (await getWriteRequestById(engine, row.id))!;
     }
     return finishUnpublishedFailure(engine, row, error);
-  } finally { releaseCapacity?.(); await lock?.release(); }
+  } finally { releaseCapacity?.(); await pageLock?.release(); await lock?.release(); }
 }
 
 export async function recoverPublication(engine: BrainEngine, id: string, hostId = localHostId(), alreadyLocked = false,

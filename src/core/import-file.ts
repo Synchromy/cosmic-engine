@@ -124,6 +124,10 @@ export interface ImportResult {
   status: 'imported' | 'skipped' | 'error';
   chunks: number;
   error?: string;
+  embedding?: 'waiting';
+  /** Usage receipt for callers importing page content directly. */
+  outcome?: 'created' | 'updated';
+  embed_tokens?: number;
   /**
    * Parsed page content. Present for status='imported' AND status='skipped'
    * (skip happens when content is identical to existing page; auto-link still
@@ -243,6 +247,14 @@ export async function importFromContent(
     /** Internal canonical metadata, after protected-body overlays and before hashing. */
     prepareFrontmatter?: (page: ParsedPage) => void;
     noEmbed?: boolean;
+    /**
+     * Cosmic C-19, put_page only: when the embedder is OUT (see
+     * embed-outage.ts), land the page without its embedding and mark it
+     * waiting instead of throwing. Every other caller keeps strict errors.
+     */
+    deferOnEmbedOutage?: boolean;
+    /** Bounds on the inline embed's retry ladder, for interactive callers. */
+    embedRetry?: { maxRetries?: number; maxDelayMs?: number };
     sourceId?: string;
     /**
      * v0.29.1: basename without extension for filename-date precedence on
@@ -887,6 +899,8 @@ export async function importFromContent(
     status: 'imported',
     chunks: chunks.length,
     parsedPage,
+    outcome: existing ? 'updated' : 'created',
+    embed_tokens: chunks.reduce((n, c) => n + (c.embedding ? (c.token_count ?? 0) : 0), 0),
     ...(pageQuarantined ? { quarantined: true } : {}),
     ...(pageFlagged ? { flagged: true, flag_reason: pageFlagReason } : {}),
     ...(typeWarning ? { type_warning: typeWarning } : {}),

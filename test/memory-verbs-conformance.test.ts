@@ -132,6 +132,7 @@ async function seedEntityPage(slug: string, title: string, body = 'A synthetic t
 
 describe('recall — G1B superset + budget packing', () => {
   it('legacy-param recall keeps every legacy field shape and adds only the v1 fields', async () => {
+    await seedEntityPage('people/superset-test', 'Superset Test');
     const r1 = await callRemote('remember', {
       fact: 'superset regression fact',
       provenance: 'conformance test',
@@ -162,6 +163,7 @@ describe('recall — G1B superset + budget packing', () => {
   });
 
   it('budget packing reports consistent meta and drops everything under a 1-token budget', async () => {
+    await seedEntityPage('people/budget-test', 'Budget Test');
     for (let i = 0; i < 3; i++) {
       await callRemote('remember', {
         fact: `budget fact number ${i} with some padding text to cost tokens`,
@@ -270,6 +272,7 @@ describe('remember — contract behavior', () => {
   });
 
   it('remote remember→recall round-trip holds (world default [F2]); private facts stay hidden', async () => {
+    await seedEntityPage('people/roundtrip-test', 'Roundtrip Test');
     await callRemote('remember', {
       fact: 'world-visible round-trip fact', provenance: 'test', entity: 'people/roundtrip-test',
     });
@@ -588,6 +591,7 @@ describe('context_pack — error-path envelope [B6]', () => {
 
 describe('forget — idempotency + not_found', () => {
   it('expires once, reports expired:false on re-forget, not_found on unknown id', async () => {
+    await seedEntityPage('people/forget-test', 'Forget Test');
     const r = await callRemote('remember', {
       fact: 'fact to forget', provenance: 'test', entity: 'people/forget-test',
     });
@@ -644,6 +648,7 @@ describe('forget — idempotency + not_found', () => {
   });
 
   it('[ship P1.1] a remote caller cannot forget a private fact (world-only)', async () => {
+    await seedEntityPage('people/private-forget-test', 'Private Forget Test');
     const r = await callRemote('remember', {
       fact: 'private fact remote cannot forget', provenance: 'test',
       entity: 'people/private-forget-test', visibility: 'private',
@@ -828,13 +833,14 @@ describe('fixture mirror + surface invariants', () => {
     expect(onDisk).toEqual(JSON.parse(JSON.stringify(CONFORMANCE_CASES)));
   });
 
-  it('every VERB_NAMES entry (7 as of v0.45.7) carries verb: true and nothing else does', async () => {
+  it('every VERB_NAMES entry (8: 7 as of v0.45.7 + the carried list_pages_with_frontmatter) carries verb: true and nothing else does', async () => {
     const { operations } = await import('../src/core/operations.ts');
     const verbs = operations.filter(o => o.verb === true).map(o => o.name).sort();
     expect(verbs).toEqual([...VERB_NAMES].sort());
     // An accidental verb addition/removal must be a LOUD, named failure —
-    // the frozen set is 5 core + 2 additive (context_pack, delta).
-    expect(VERB_NAMES.length).toBe(7);
+    // the frozen set is 5 core + 2 additive (context_pack, delta) + 1 additive
+    // carried patch (list_pages_with_frontmatter, cosmic-hub C-137).
+    expect(VERB_NAMES.length).toBe(8);
   });
 
   it('a pre-v0.45.7 five-verb endpoint still certifies (additive verbs skip, never fail)', async () => {

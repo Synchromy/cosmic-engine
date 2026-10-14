@@ -63,7 +63,7 @@ export const OPERATION_MANIFEST: OperationMeta[] = [
       },
       "entity": {
         "type": "string",
-        "description": "Subject (name or slug)."
+        "description": "Existing page (name or slug)."
       },
       "infer_entity": {
         "type": "boolean",
@@ -360,6 +360,123 @@ export const OPERATION_MANIFEST: OperationMeta[] = [
     "area": "pages"
   },
   {
+    "name": "patch_page",
+    "outputRedaction": "no_stored_text",
+    "description": "Patch existing canonical Markdown using base_revision from get_page. Omitted fields survive; frontmatter_unset explicitly removes keys. Objects and arrays replace atomically. The canonical owner coordinates file publication, projection, recovery and durable request receipts. Retry with the same request_id.",
+    "params": {
+      "request_id": {
+        "type": "string",
+        "description": "UUID; retry with it on timeout."
+      },
+      "wait_ms": {
+        "type": "number",
+        "description": "Commit wait ms (0-30000, default 5000)."
+      },
+      "slug": {
+        "type": "string",
+        "required": true,
+        "description": "Existing page slug."
+      },
+      "source_id": {
+        "type": "string",
+        "required": false,
+        "description": "Source that supplied the canonical_revision. Remote callers may target only their write source."
+      },
+      "base_revision": {
+        "type": "string",
+        "required": true,
+        "description": "Exact canonical_revision returned by get_page."
+      },
+      "type": {
+        "type": "string",
+        "required": false,
+        "description": "New page type (lowercase slug grammar). type is a reserved frontmatter key, so this is the only way to retype a page through patch_page."
+      },
+      "title": {
+        "type": "string",
+        "required": false,
+        "description": "New page title (single line, 1-300 characters). title is a reserved frontmatter key, so this is the only way to retitle a page through patch_page."
+      },
+      "frontmatter_set": {
+        "type": "object",
+        "required": false,
+        "description": "Top-level frontmatter keys to set. Nested objects and arrays replace atomically."
+      },
+      "frontmatter_unset": {
+        "type": "array",
+        "required": false,
+        "items": {
+          "type": "string"
+        },
+        "description": "Top-level frontmatter keys to remove explicitly."
+      },
+      "frontmatter_set_if_empty": {
+        "type": "object",
+        "required": false,
+        "description": "Set a key only when absent, null, or a blank string."
+      }
+    },
+    "mutating": true,
+    "scope": "write",
+    "cliHints": {
+      "name": "patch-page",
+      "positional": [
+        "slug"
+      ]
+    },
+    "area": "pages"
+  },
+  {
+    "name": "append_page_event",
+    "idempotent": true,
+    "outputRedaction": "no_stored_text",
+    "description": "Append one typed interaction to an existing canonical page. The server derives caller identity and event marker, binds a caller-stable idempotency key to the full request, coordinates canonical publication, projection and recovery, and returns an immutable receipt. Historical events are placed by date and never regress last-contact metadata.",
+    "params": {
+      "slug": {
+        "type": "string",
+        "required": true,
+        "description": "Existing canonical page slug."
+      },
+      "source_id": {
+        "type": "string",
+        "required": false,
+        "description": "Write-authorized source containing the page."
+      },
+      "idempotency_key": {
+        "type": "string",
+        "required": true,
+        "description": "Stable upstream event identity, namespaced by provider and target slug."
+      },
+      "date": {
+        "type": "string",
+        "required": true,
+        "description": "Interaction date as YYYY-MM-DD."
+      },
+      "channel": {
+        "type": "string",
+        "required": true,
+        "description": "Short interaction channel label."
+      },
+      "note": {
+        "type": "string",
+        "required": true,
+        "description": "Single-line plain-text interaction summary."
+      }
+    },
+    "mutating": true,
+    "scope": "write",
+    "cliHints": {
+      "name": "append-page-event",
+      "positional": [
+        "slug",
+        "date",
+        "channel",
+        "note"
+      ]
+    },
+    "area": "pages"
+  },
+  {
     "name": "delete_page",
     "idempotent": true,
     "outputRedaction": "no_stored_text",
@@ -430,6 +547,14 @@ export const OPERATION_MANIFEST: OperationMeta[] = [
       "updated_after_slug": {
         "type": "string",
         "description": "Last row's slug (with updated_after)."
+      },
+      "effective_after": {
+        "type": "string",
+        "description": "Subject date >= ISO."
+      },
+      "effective_before": {
+        "type": "string",
+        "description": "Subject date <= ISO; future OK."
       },
       "sort": {
         "type": "string",
@@ -525,6 +650,33 @@ export const OPERATION_MANIFEST: OperationMeta[] = [
     "cliHints": {
       "name": "purge-deleted",
       "hidden": true
+    },
+    "area": "pages"
+  },
+  {
+    "name": "purge_page",
+    "outputRedaction": "no_stored_text",
+    "description": "Admin-only hard-delete of one page row at (source_id, slug), whether live or soft-deleted. Cascades through its chunks, versions, links, and timeline with no recovery window. Local CLI only; a missing row returns removed: 0.",
+    "params": {
+      "slug": {
+        "type": "string",
+        "required": true,
+        "description": "Slug of the page to permanently remove."
+      },
+      "source_id": {
+        "type": "string",
+        "required": true,
+        "description": "Source holding the page to permanently remove. Required; never defaults to ctx.sourceId or default."
+      }
+    },
+    "mutating": true,
+    "scope": "admin",
+    "localOnly": true,
+    "cliHints": {
+      "name": "purge-page",
+      "positional": [
+        "slug"
+      ]
     },
     "area": "pages"
   },
@@ -649,6 +801,43 @@ export const OPERATION_MANIFEST: OperationMeta[] = [
       ]
     },
     "area": "pages"
+  },
+  {
+    "name": "list_pages_with_frontmatter",
+    "outputRedaction": "retrieval",
+    "description": "MEMORY VERB (v1, additive): list the newest pages of one type whose frontmatter holds the given text values, each with its frontmatter and its canonical_revision (pass that to patch_page as base_revision). The frontmatter and the revision describe the same canonical snapshot. canonical_revision is null when the canonical bytes cannot be read; such a row cannot be patched until they can. Same source scope and private-page rules as list_pages. Default 50 rows; remote callers are capped at 100. protocol_version rides every response.",
+    "params": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Page type to list, e.g. \"handoff\"."
+      },
+      "where": {
+        "type": "object",
+        "description": "Frontmatter keys to text values, matched for equality, one value per key, all must match (at most 8 keys). Example: { \"status\": \"open\" }."
+      },
+      "limit": {
+        "type": "number",
+        "description": "Max results (default 50; remote callers are capped at 100)"
+      },
+      "source_id": {
+        "type": "string",
+        "description": "Scope to one source. Defaults to the caller's scope, as list_pages. '__all__' spans every source for trusted local callers; for remote callers '__all__' spans only your granted sources."
+      }
+    },
+    "scope": "read",
+    "mutating": false,
+    "idempotent": true,
+    "verb": true,
+    "cliHints": {
+      "name": "list-frontmatter",
+      "hidden": true
+    },
+    "annotations": {
+      "title": "list pages with frontmatter",
+      "readOnlyHint": true
+    },
+    "area": "memory-verbs"
   },
   {
     "name": "edit_page",
@@ -4987,6 +5176,31 @@ export const OPERATION_MANIFEST: OperationMeta[] = [
     "mutating": true,
     "scope": "write",
     "area": "memory"
+  },
+  {
+    "name": "delete_fact",
+    "outputRedaction": "no_stored_text",
+    "description": "Delete one fact you wrote: its row in the page's Markdown facts fence and its facts row, together, under the source and page locks. Refuses unless `provenance` equals the row's recorded provenance exactly, the row is on a page, and the fence holds it as the database records it; a refused call changes nothing. Records no withdrawal, so the same claim can be remembered again later. To retract a wrong fact, use forget instead.",
+    "params": {
+      "id": {
+        "type": "number",
+        "required": true,
+        "description": "Fact id to delete (fact_id from remember or recall)."
+      },
+      "provenance": {
+        "type": "string",
+        "required": true,
+        "description": "The provenance the fact was written with (remember's provenance). Must match the row exactly."
+      }
+    },
+    "mutating": true,
+    "scope": "write",
+    "area": "memory",
+    "annotations": {
+      "title": "delete a fact you wrote",
+      "destructiveHint": true,
+      "idempotentHint": false
+    }
   },
   {
     "name": "purge_fact",

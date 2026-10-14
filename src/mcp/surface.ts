@@ -107,6 +107,10 @@ export const STARTER_OPS: ReadonlySet<string> = new Set([
   'join_brain', 'sync_brain_skills', 'leave_brain', 'put_skill', 'delete_skill',
   // The dismissal for the coaching notices starter sessions receive (onboarding, features).
   'mute_notice',
+  // Typed, idempotent interaction ingestion is a daily writer primitive for
+  // source adapters. Keep it outside BRAIN_TOOL_ALLOWLIST: starter clients
+  // discover it here, while minion subagents do not gain it implicitly.
+  'append_page_event',
 ]);
 
 /**

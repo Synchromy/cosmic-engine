@@ -1,3 +1,4 @@
+import { pageResponseWithUsage } from '../put-page-usage.ts';
 import { randomUUID } from 'node:crypto';
 import { pageQuarantinedNotice } from '../quarantine.ts';
 import { fenceNormalizedNotice, type FencesNormalized } from '../fence-repair/report.ts';
@@ -6,6 +7,7 @@ import { realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { OperationContext } from '../ops/contract.ts';
 import { OperationError } from '../ops/contract.ts';
+import { assertNoRestrictedTwin } from '../restricted-write-guard.ts';
 import { VERSION } from '../../version.ts';
 import { ownerBuildMismatch } from './publication-failure.ts';
 import { enforceClientSlugFence, enforceSubagentSlugFence, isLegacyStoredPageSlug, normalizeSlugPrefix, parseSourceIdParam, requireWritablePage, validatePageSlug } from '../ops/context.ts';
@@ -203,9 +205,15 @@ export async function submitPageMutation(ctx: OperationContext,
   const waitMs = () => wireWaitMs !== undefined ? Math.max(0, wireWaitMs - (performance.now() - arrived)) : input.waitMs ?? ctx.writeWaitMs;
   // Phase 4.2: pre-admission reads that admission rechecks come from this process's cache; a refusal the
   // cache could explain drops it and prepares the write once more, uncached, so it ends as it would without it.
+  const respond = async (settled: WriteRequest) => {
+    const response = throwIfHeld(pendingAwareResponse(ctx, settled), false);
+    if (!['put_page','capture'].includes(input.operation)) return response;
+    const budget = wireWaitMs ?? input.waitMs ?? ctx.writeWaitMs ?? 5000;
+    return pageResponseWithUsage(ctx.engine, response, settled.id, arrived + budget);
+  };
   const cached = await preadmitReads(ctx.engine);
   let prepared = await preparePageAdmission(cached ? { ...ctx, engine: cached } : ctx, { ...input, params });
-  if (prepared.prior) return throwIfHeld(pendingAwareResponse(ctx, await waitForWrite(ctx.engine, prepared.prior, ctx.config, waitMs())), false);
+  if (prepared.prior) return respond(await waitForWrite(ctx.engine, prepared.prior, ctx.config, waitMs()));
   const brainId = cached ? cachedPreadmitBrain(ctx.engine) : undefined;
   // Phase 4.4: the admission transaction runs on the warm single-write lane when it is free.
   const admit = (admission: WriteAdmission) => onPersistenceLane(ctx.engine, transaction => admitWrite(ctx.engine, admission, undefined, transaction),
@@ -216,10 +224,10 @@ export async function submitPageMutation(ctx: OperationContext,
     if (!cached || !preadmitRecheckFailed(error)) throw error;
     dropPreadmitCache(ctx.engine);
     prepared = await preparePageAdmission(ctx, { ...input, params: { ...params, request_id: prepared.admission.requestId } });
-    if (prepared.prior) return throwIfHeld(pendingAwareResponse(ctx, await waitForWrite(ctx.engine, prepared.prior, ctx.config, waitMs())), false);
+    if (prepared.prior) return respond(await waitForWrite(ctx.engine, prepared.prior, ctx.config, waitMs()));
     row = await admit(prepared.admission);
   }
-  const response = throwIfHeld(pendingAwareResponse(ctx, await waitForWrite(ctx.engine, row, ctx.config, waitMs())), false);
+  const response = await respond(await waitForWrite(ctx.engine, row, ctx.config, waitMs()));
   emitFenceNotice(ctx, response, row.slug);
   return { ...response, ...(prepared.typeWarning ? { type_warning: prepared.typeWarning } : {}), ...(prepared.slugAdvisory ? { slug_advisory: prepared.slugAdvisory } : {}) };
 }
@@ -313,10 +321,18 @@ export async function preparePageAdmission(ctx: OperationContext,
   await validateMutationSlug(ctx, input.operation, slug, sourceId);
   enforceClientSlugFence(ctx, slug, input.operation);
   enforceSubagentSlugFence(ctx, slug, input.operation);
+  // C-72: check the resolved slug/source for both content-write entrypoints.
+  // Dry-run adapters return before admission; trusted local writes are exempt.
+  if (input.operation === 'put_page' || input.operation === 'capture') {
+    await assertNoRestrictedTwin(ctx, slug, sourceId, input.operation);
+  }
   // Preserve same-source diagnostics for new timeline writes without making
   // terminal replay depend on a page that may have since been purged.
   if (input.operation === 'add_timeline_entry') await requireWritablePage({ ...ctx, sourceId }, slug, input.operation, 'page');
   intent.slug = slug;
+  if (input.operation === 'capture' || input.operation === 'put_page' && input.managedFileImport !== true) {
+    await (await import('./c1-page-mutations.ts')).assertC1PageAdmission(ctx.engine, sourceId, slug, intent.content as string);
+  }
   if (ctx.remote !== false) Object.assign(intent, { source_kind: `mcp:${input.operation}`, source_uri: null, ingested_via: `mcp:${input.operation}` });
   const [authority, , snapshot, boundAtStart, writeThroughSetting, repoPath] = await pipelined(ctx.engine, [
     () => submissionAuthority(ctx, input.operation, sourceId, source.incarnation, slug),

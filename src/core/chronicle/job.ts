@@ -1,3 +1,4 @@
+import { derivesFrom, RESTRICTED_SOURCE_REASON } from '../restricted-no-derive.ts';
 /**
  * One-page Life Chronicle extraction outside the cycle (the legacy
  * `chronicle_extract` job). Records the page in the ledger as trusted local
@@ -32,6 +33,7 @@ export async function runChronicleJob(engine: BrainEngine, opts: {
   judge?: ChronicleJudge; signal?: AbortSignal;
 }): Promise<ChronicleJobResult> {
   const { slug, sourceId } = opts;
+  if (!derivesFrom(sourceId)) return { slug, status: 'skipped', reason: RESTRICTED_SOURCE_REASON };
   const snapshot = await engine.readPageSnapshot(slug, { sourceId });
   if (!snapshot) return { slug, status: 'skipped', reason: 'page_missing' };
   const contentHash = String(snapshot.page.content_hash ?? '');

@@ -157,6 +157,7 @@ const PARAM_FACTORY: Record<string, Record<string, unknown>> = {
   get_page: { slug: WORLD_FENCE_SLUG, include_content: true },
   fetch: { id: WORLD_FENCE_SLUG },
   list_pages: {},
+  list_pages_with_frontmatter: { type: 'person' },
   search: { query: 'WORLDSWEEP' },
   query: { query: 'WORLDSWEEP' },
   assemble_evidence: { hits: [{ source_id: 'default', slug: WORLD_FENCE_SLUG, chunk_id: 0 }], return_unit: 'page' },
@@ -239,6 +240,7 @@ const EXPECTED_OUTCOME: Record<string, Outcome> = {
   get_page: 'data',
   fetch: 'data',
   list_pages: 'data',
+  list_pages_with_frontmatter: 'data',
   search: 'data',
   query: 'data',
   assemble_evidence: 'data',
@@ -346,6 +348,8 @@ const EXPECTED_OUTCOME: Record<string, Outcome> = {
   rate_answer: 'error',
   put_page: 'ok',
   put_pages: 'ok',
+  patch_page: 'error', // generic sweep omits required revision; dedicated C1 privacy test proves hidden facts survive
+  append_page_event: 'error', // default-off writer gate; dedicated operation tests cover the enabled response envelope
   delete_page: 'ok',
   restore_page: 'ok',
   capture: 'ok',
@@ -369,6 +373,7 @@ const EXPECTED_OUTCOME: Record<string, Outcome> = {
   extract_entities: 'error',
   extract_facts: 'error',
   forget_fact: 'error',
+  delete_fact: 'error',  // no id/provenance in the sweep's default params → invalid_params
   schema_apply_mutations: 'error',
   reload_schema_pack: 'ok',
   run_onboard: 'ok',
@@ -460,6 +465,11 @@ beforeAll(async () => {
 
   // ── Seed the corpus (source: default) ──────────────────────────────
   const put = operationsByName['put_page'];
+  // The remember sweep target: remember refuses an entity with no page.
+  await put.handler(localCtx(), {
+    slug: 'people/sweep-fresh-entity',
+    content: '---\ntitle: Sweep Fresh Entity\ntype: person\n---\n\n# Sweep Fresh Entity\n\nSynthetic.\n',
+  });
   // 1. World page whose PRIVATE fence rows live BELOW the timeline
   //    sentinel — the exact #4546 topology (a fence in the `timeline`
   //    column of a world-visible page; a fence on a private page would
@@ -568,12 +578,15 @@ visibility: private
 private source-2 body
 `,
   });
-  await remember.handler(localCtx(SRC2), {
+  // A private src2 fact under a slug whose page lives only in the default
+  // source: the cross-source topology under test. The remember verb refuses
+  // an entity with no page in its source, so seed directly through the engine.
+  await engine.insertFact({
     fact: PRIV.src2Fact,
-    provenance: 'sweep-seed',
-    entity: WORLD_PAGE_SLUG,
+    source: 'sweep-seed',
+    entity_slug: WORLD_PAGE_SLUG,
     visibility: 'private',
-  });
+  }, { source_id: SRC2 });
   // World-visible src2 page: the federated arm's positive control — without
   // it, every src2 sentinel could pass vacuously if allowedSources fan-out
   // silently never reached source 2 (the "sweep against an empty brain

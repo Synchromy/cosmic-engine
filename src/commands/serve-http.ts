@@ -17,6 +17,7 @@
 
 import { listenOrRefuse, type AdoptableServer } from './serve-http-listen.ts';
 import express from 'express';
+import { isCredential, brandServerName, brandResourceName } from '../cosmic/brand.ts';
 import type { Socket } from 'net';
 import type { Request, RequestHandler, CookieOptions } from 'express';
 import cookieParser from 'cookie-parser';

@@ -3,6 +3,7 @@
  * durable record of each page content's extraction. See contract.ts for the
  * columns and reason codes.
  */
+import { derivesFrom, RESTRICTED_SOURCE_REASON } from '../restricted-no-derive.ts';
 import type { BrainEngine } from '../engine.ts';
 import type { PageSnapshot } from '../page-state/types.ts';
 import type { WriteAuthority, WriteRequest } from '../persistence/model.ts';
@@ -19,6 +20,7 @@ const DECIDING_INTENTS = new Set(['managed_sync_import', 'connector_v2_import'])
 export const RETIRE_REASONS = ['not_chronicle_shaped', 'dream_generated', 'too_short'] as const;
 
 export interface ChronicleDecisionPage {
+  source_id?: string;
   type: string;
   slug: string;
   compiled_truth?: string | null;
@@ -45,6 +47,7 @@ export function decideChronicle(input: {
   invalidSetting?: boolean;
 }): ChronicleDecision {
   const skip = (reason: string): ChronicleDecision => ({ state: 'skipped', reason, nextAttemptAt: null });
+  if (!derivesFrom(input.page.source_id)) return skip(RESTRICTED_SOURCE_REASON);
   if (!input.enabled) return skip(input.invalidSetting ? 'auto_chronicle_invalid' : 'auto_chronicle_off');
   if (input.noExtract) return skip('no_extract');
   const confined = input.authority ? derivedExtractionSkip(input.authority) : null;
@@ -190,7 +193,7 @@ export async function recordChronicleDecision(tx: BrainEngine, row: DecidingRequ
   }
   const now = new Date();
   const setting = autoChronicleSetting(enabledRaw);
-  const decision = decideChronicle({ page, authority: row.authority ?? null, noExtract,
+  const decision = decideChronicle({ page: { ...page, source_id: row.source_id }, authority: row.authority ?? null, noExtract,
     enabled: setting === 'on', invalidSetting: setting === 'invalid', settings, now });
   const receiptCtx: ChronicleReasonContext = { sourceId: base.sourceId, since: now.toISOString().slice(0, 10),
     dailyLimit: settings.dailyLimit, recentDays: settings.recentDays };

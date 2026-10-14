@@ -93,11 +93,12 @@ beforeEach(async () => {
 });
 
 describe('protocol additivity (P1 fix)', () => {
-  test('MEMORY_VERBS_VERSION stays 1 with 7 frozen verbs', () => {
+  test('MEMORY_VERBS_VERSION stays 1 with 8 verbs (7 upstream + the carried list_pages_with_frontmatter)', () => {
     expect(MEMORY_VERBS_VERSION).toBe(1);
     expect(VERB_NAMES).toContain('context_pack');
     expect(VERB_NAMES).toContain('delta');
-    expect(VERB_NAMES.length).toBe(7);
+    expect(VERB_NAMES).toContain('list_pages_with_frontmatter');
+    expect(VERB_NAMES.length).toBe(8);
   });
 
   test('context_pack + delta are verbs on the surface, scope read', () => {
@@ -595,6 +596,7 @@ describe('push-path IPC handler (extracted, real engine)', () => {
 describe('hot-memory cache: cross-tier isolation (adversarial P1 regression)', () => {
   test('a local include_private call must not warm the cache the remote read hits', async () => {
     const local = ctxFor({ remote: false });
+    await engine.putPage('tier-acme', { title: 'tier-acme', type: 'company', compiled_truth: 'A synthetic test company.', timeline: '' });
     await call(remember, local, { fact: 'tier-secret burn detail', provenance: 't', entity: 'tier-acme', visibility: 'private' });
     __resetHotMemoryCacheForTests();
     // Warm the cache at the trusted-local tier (private facts included).
@@ -611,6 +613,7 @@ describe('visibility (eng 1A / D2=A): world-only default, fail-closed widen', ()
   beforeEach(async () => {
     // seed one world + one private fact about the same entity
     const local = ctxFor({ remote: false });
+    await engine.putPage('acme-example', { title: 'acme-example', type: 'company', compiled_truth: 'A synthetic test company.', timeline: '' });
     await call(remember, local, { fact: 'acme-example raised a seed round', provenance: 'test', entity: 'acme-example', visibility: 'world' });
     await call(remember, local, { fact: 'acme-example secret burn rate detail', provenance: 'test', entity: 'acme-example', visibility: 'private' });
     __resetHotMemoryCacheForTests();
