@@ -149,6 +149,7 @@ const MATRIX: Row[] = [
     expectScoped: r => { expect(r === null || leakToken(r) === null).toBe(true); } },
   { name: 'entity_identity_list', mode: 'isolated', args: {} },
   { name: 'list_pages', mode: 'isolated', args: { limit: 100 } },
+  { name: 'list_pages_with_frontmatter', mode: 'isolated', args: { type: 'note', limit: 100 } },
   { name: 'search', mode: 'isolated', args: { query: 'BETAMARKER', limit: 20 } },
   { name: 'query', mode: 'isolated', args: { query: 'BETAMARKER', limit: 20 } },
   { name: 'assemble_evidence', mode: 'isolated', args: { hits: [{ source_id: 'srcbeta', slug: 'notes/beta-note', chunk_id: 0 }], return_unit: 'page' } },
