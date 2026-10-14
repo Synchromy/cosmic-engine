@@ -233,6 +233,21 @@ interface CaptureResult {
   captured_at: string;
   revision?: string;
   write_request?: WriteReceipt;
+  /** What put_page did and what its indexing cost. */
+  outcome?: 'created' | 'updated' | 'unchanged';
+  embed_tokens?: number;
+  embed_cost_usd?: number;
+}
+
+/**
+ * Carry put_page usage into the CLI receipt, which has no MCP request log row.
+ * Older servers and dry runs that report no outcome add no usage fields.
+ */
+export function captureUsageOf(r: unknown): Pick<CaptureResult, 'outcome' | 'embed_tokens' | 'embed_cost_usd'> {
+  const o = r && typeof r === 'object' ? (r as Record<string, unknown>) : {};
+  if (o.outcome !== 'created' && o.outcome !== 'updated' && o.outcome !== 'unchanged') return {};
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  return { outcome: o.outcome, embed_tokens: num(o.embed_tokens), embed_cost_usd: num(o.embed_cost_usd) };
 }
 
 function printReceipt(result: CaptureResult, quiet: boolean, json: boolean): void {
@@ -439,6 +454,7 @@ export async function runCapture(engine: BrainEngine | null, args: string[], opt
       captured_at: receipt?.created_at ?? capturedAt,
       ...(receipt ? { write_request: receipt } : {}),
       ...(typeof result.revision === 'string' ? { revision: result.revision } : {}),
+      ...captureUsageOf(result),
     }, parsed.quiet ?? false, parsed.json ?? false);
   } catch (error) {
     if (await reportPersistenceCliError(error, parsed.json ?? false)) return;
