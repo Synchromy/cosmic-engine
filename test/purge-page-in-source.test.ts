@@ -65,7 +65,7 @@ async function count(table: 'pages' | 'content_chunks' | 'page_versions' | 'link
 }
 
 describe('purge_page in one source', () => {
-  it('purges a managed soft-deleted row with its chunks, versions, links and tombstone', async () => {
+  it('purges a managed soft-deleted row with its chunks, versions and links without leaving its tombstone', async () => {
     await addSource('source-a');
     const page = await seed('notes/soft-deleted', 'source-a');
     // Upstream requires the current revision to soft-delete an existing page.
@@ -84,10 +84,10 @@ describe('purge_page in one source', () => {
     expect(await count('content_chunks', page.id)).toBe(0);
     expect(await count('links', page.id)).toBe(0);
     expect(await count('page_versions', page.id)).toBe(0);
-    expect([...(await readPagePurgeTombstones(engine, 'source-a')).values()]).toContain(page.slug);
+    expect([...(await readPagePurgeTombstones(engine, 'source-a')).values()]).not.toContain(page.slug);
   });
 
-  it('purges a managed live row with its chunks, versions, links and tombstone', async () => {
+  it('purges a managed live row with its chunks, versions and links without leaving its tombstone', async () => {
     await addSource('source-a');
     const page = await seed('notes/live', 'source-a');
     await engine.executeRaw('UPDATE persistence_brain SET enabled=true WHERE singleton=1');
@@ -100,7 +100,7 @@ describe('purge_page in one source', () => {
     expect(await count('pages', page.id)).toBe(0);
     expect(await count('links', page.id)).toBe(0);
     expect(await count('page_versions', page.id)).toBe(0);
-    expect([...(await readPagePurgeTombstones(engine, 'source-a')).values()]).toContain(page.slug);
+    expect([...(await readPagePurgeTombstones(engine, 'source-a')).values()]).not.toContain(page.slug);
   });
 
   it('still purges a row on an unmanaged brain', async () => {
@@ -112,7 +112,48 @@ describe('purge_page in one source', () => {
     expect(await count('content_chunks', page.id)).toBe(0);
     expect(await count('links', page.id)).toBe(0);
     expect(await count('page_versions', page.id)).toBe(0);
-    expect([...(await readPagePurgeTombstones(engine, 'source-a')).values()]).toContain(page.slug);
+    expect([...(await readPagePurgeTombstones(engine, 'source-a')).values()]).not.toContain(page.slug);
+  });
+
+  it('allows placeCopy to rewrite identical content at the same slug and another slug on a managed brain', async () => {
+    await addSource('source-a');
+    await engine.executeRaw('UPDATE persistence_brain SET enabled=true WHERE singleton=1');
+    expect(await managedPersistenceEnabled(engine)).toBe(true);
+    const putPage = operations.find(op => op.name === 'put_page')!;
+    const content = '---\ntype: note\ntitle: Beam copy\n---\n# Beam copy\n\nIdentical beam text.\n';
+    const put = (slug: string) => withEnv({ GBRAIN_HOME: home }, () =>
+      putPage.handler(localCtx('source-a'), { slug, source_id: 'source-a', content }));
+
+    await put('beam/example');
+    const original = await engine.getPage('beam/example', { sourceId: 'source-a' });
+    expect(original).not.toBeNull();
+    expect(await callPurge(localCtx(), { slug: 'beam/example', source_id: 'source-a' })).toMatchObject({ removed: 1, status: 'purged' });
+
+    for (const slug of ['beam/example', 'beam/another-copy']) {
+      expect(await put(slug)).toMatchObject({ state: 'committed', page_outcome: 'created' });
+      const placed = await engine.getPage(slug, { sourceId: 'source-a' });
+      expect(placed).not.toBeNull();
+      expect(placed!.compiled_truth).toBe(original!.compiled_truth);
+      expect(placed!.content_hash).toBe(original!.content_hash);
+    }
+    expect([...(await readPagePurgeTombstones(engine, 'source-a')).values()]).not.toContain('beam/example');
+  });
+
+  it('preserves an earlier upstream purge tombstone for another slug in the same source', async () => {
+    await addSource('source-a');
+    await engine.putPage('notes/upstream-purge', { type: 'note', title: 'Upstream purge', compiled_truth: 'Previously purged content.' }, { sourceId: 'source-a' });
+    const page = await seed('beam/example', 'source-a');
+    await engine.executeRaw('UPDATE persistence_brain SET enabled=true WHERE singleton=1');
+    const snapshot = await engine.readPageSnapshot('notes/upstream-purge', { sourceId: 'source-a' });
+    expect(await withEnv({ GBRAIN_HOME: home }, () => deletePage.handler(localCtx('source-a'), {
+      slug: 'notes/upstream-purge', source_id: 'source-a', purge: true, expected_revision: snapshot!.revision,
+    }))).toMatchObject({ status: 'purged' });
+    const earlier = await engine.executeRaw('SELECT * FROM page_purges WHERE source_id=$1 AND slug=$2', ['source-a', 'notes/upstream-purge']);
+    expect(earlier.length).toBeGreaterThan(0);
+
+    expect(await callPurge(localCtx(), { slug: page.slug, source_id: 'source-a' })).toMatchObject({ removed: 1, status: 'purged' });
+    expect([...(await readPagePurgeTombstones(engine, 'source-a')).values()]).not.toContain(page.slug);
+    expect(await engine.executeRaw('SELECT * FROM page_purges WHERE source_id=$1 AND slug=$2', ['source-a', 'notes/upstream-purge'])).toEqual(earlier);
   });
 
   it('dry run answers without deleting a live row, its chunks, or its versions', async () => {

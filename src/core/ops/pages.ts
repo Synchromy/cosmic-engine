@@ -497,11 +497,18 @@ const purge_page: Operation = {
     const snapshot = await ctx.engine.readPageSnapshot(slug, { sourceId, includeDeleted: true });
     if (!snapshot) return { removed: 0 };
     const { randomUUID } = await import('node:crypto');
+    const requestId = randomUUID();
     const result = await (await import('../persistence/page-purge.ts')).finishPagePurge(ctx,
       await submitPageMutation(ctx, { operation: 'delete_page', params: {
         slug, source_id: sourceId, purge: true,
-        expected_revision: snapshot.revision, request_id: randomUUID(),
+        expected_revision: snapshot.revision, request_id: requestId,
       } }));
+    if (result.status === 'purged') {
+      // Beam placeCopy rewrites the same content; clear only this request's tombstones (which reference the journal row ID).
+      await ctx.engine.executeRaw(`DELETE FROM page_purges p USING persistence_requests r
+        WHERE p.source_id=$1 AND p.slug=$2 AND p.request_id=r.id
+          AND r.source_id=$1 AND r.slug=$2 AND r.request_id=$3::uuid`, [sourceId, slug, requestId]);
+    }
     // A pending receipt must not claim a row has already been removed.
     return { ...result, removed: result.status === 'purged' ? 1 : 0 };
   },
