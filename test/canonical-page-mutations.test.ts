@@ -59,6 +59,16 @@ function cleanup(): void {
 
 afterEach(cleanup);
 
+test('applySparsePagePatch: dedicated type and title fields win over existing frontmatter keys', () => {
+  const next = applySparsePagePatch(ORIGINAL, 'people/example-person', { type: 'company', title: 'Example Co' });
+  expect(next).toContain('type: company');
+  expect(next).not.toContain('type: person');
+  expect(next).toContain('title: Example Co');
+  expect(next).not.toContain('title: Example Person');
+  expect(next.match(/^type: /gm)?.length).toBe(1);
+  expect(next).toContain('role: Founder');
+});
+
 describe('sparse canonical patch semantics', () => {
   test('preserves omitted fields and treats nested values atomically', () => {
     const next = applySparsePagePatch(ORIGINAL, 'people/example-person', {
@@ -576,6 +586,7 @@ describe('canonical-first v2 immutable receipts', () => {
     seed(slug);
     const projected = new Set<string>();
     let projectCalls = 0;
+    let admissibilityCalls = 0;
     const invoke = () => commitCanonicalMutationV2({
       engine,
       principalId: 'oauth:client-a',
@@ -586,6 +597,7 @@ describe('canonical-first v2 immutable receipts', () => {
       baseRevision: 'latest',
       journalRoot,
       lockRoot,
+      assertNewRequest: () => { admissibilityCalls += 1; },
       buildContent: (current) => applySparsePagePatch(current.content!, slug, { frontmatter_set: { last_contacted: '2026-09-02' } }),
       project: async (_content, revision) => {
         projectCalls += 1;
@@ -598,6 +610,9 @@ describe('canonical-first v2 immutable receipts', () => {
     expect(first.outcome).toBe('pending');
     const second = await invoke();
     expect(second.outcome).toBe('applied');
+    const third = await invoke();
+    expect(third.outcome).toBe('replayed');
     expect(projectCalls).toBe(2);
+    expect(admissibilityCalls).toBe(1);
   });
 });

@@ -20,7 +20,7 @@ import { pageTrustForRead, projectFetchText, projectGetPage, readQuarantined } f
 import { MIN_TRUST_PARAM } from '../eligibility/policy.ts';
 import { stampRowTrust } from '../eligibility/stamp.ts';
 import { readCanonicalPage } from '../canonical-page-mutations.ts';
-import { patchPageOperation } from './pages-c1.ts';
+import { appendPageEventOperation, patchPageOperation } from './pages-c1.ts';
 import { isAutoLinkEnabled } from '../link-extraction.ts';
 import { sanitizeRemoteBody } from '../remote-body.ts';
 import { getContentFlag } from '../quarantine.ts';
@@ -690,7 +690,7 @@ const capture: Operation = {
 // (Page CRUD quartet first, then the v0.26.5 destructive-guard ops:
 // page-level soft-delete recovery + admin purge, then capture.)
 export const pagesOperations: Operation[] = [
-  get_page, put_page, patchPageOperation, delete_page, list_pages,
+  get_page, put_page, patchPageOperation, appendPageEventOperation, delete_page, list_pages,
   restore_page, purge_deleted_pages, capture,
   fetch_page,
 ];
