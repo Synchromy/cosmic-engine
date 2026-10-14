@@ -82,7 +82,7 @@ const remember: Operation = {
     },
     entity: {
       type: 'string',
-      description: 'Subject (name or slug).',
+      description: 'Existing page (name or slug).',
     },
     infer_entity: {
       type: 'boolean',
@@ -547,6 +547,8 @@ export const RESPONSE_SCHEMAS: Record<VerbName, Record<string, unknown>> = {
       status: { type: 'string', enum: STATUS_ENUM, description: 'Branch on THIS, never on status_text.' },
       status_text: { type: 'string', description: 'Human rendering of status. Display only — never branch on it.' },
       entity_slug: { type: ['string', 'null'] },
+      // Additive optional: how `entity` matched a page (absent without an entity).
+      entity_matched_by: { type: 'string', enum: ['alias', 'slug', 'title', 'slug_suffix', 'name'] },
       valid_until: { type: ['string', 'null'], description: 'ISO 8601 or null (never expires).' },
       degraded_dedup: { type: 'boolean', description: 'Present (true) when no embedding provider — near-duplicates may insert.' },
       entity_inferred: { type: 'string', enum: ['mention'], description: 'Present when `entity` was omitted and the subject was inferred from an exact mention.' },

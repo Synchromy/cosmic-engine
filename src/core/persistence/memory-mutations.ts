@@ -87,8 +87,16 @@ async function planRememberTarget(ctx: OperationContext, sourceId: string, sourc
   if (inferred && !snapshot) throw new InferredTargetRejected('NO_ENTITY');
   if (inferred && (await isFactWithdrawn(ctx.engine, sourceId, inferred.visibility, inferred.fact, slug)
     || parseFactsFence(snapshot!.page.compiled_truth).warnings.length)) throw new InferredTargetRejected('ENTITY_LINK_FAILED');
-  // Preserve the stub guard: a fallback name remains DB-only until a real
-  // entity page exists. No placeholder page is created by remember.
+  // The page may have disappeared after explicit entity resolution. Refuse
+  // before admission rather than reverting to a database-only phantom slug.
+  if (entitySlug !== null && !snapshot) {
+    const { entityNearMisses } = await import('../verbs/entity-card.ts');
+    const suggestions = await entityNearMisses(ctx.engine, sourceId, entitySlug, { remote: ctx.remote !== false });
+    throw verbError('not_found', `entity_not_found: "${entitySlug}" no longer has a page. Nothing was saved.`,
+      `${suggestions.length ? `Nearest pages: ${suggestions.map(s => `${s.slug} ("${s.title}")`).join('; ')}. ` : ''}Retry with an existing page slug, create the page first, or omit entity.`,
+      JSON.stringify({ entity: entitySlug, suggestions }));
+  }
+  // No placeholder page is created by remember.
   const fence = entitySlug !== null && snapshot !== null;
   const sandbox = ctx.viaSubagent === true && !(ctx.allowedSlugPrefixes?.length);
   const configuredWriteThrough = !/^(false|0|off|no)$/i.test(await ctx.engine.getConfig('sync.write_through') ?? 'true');
@@ -154,8 +162,9 @@ export async function submitRememberMutation(ctx: OperationContext, params: Reco
   const { parseTtlParam } = await import('../ops/facts.ts');
   const validUntil = parseTtlParam(p.ttl);
   const entity = typeof p.entity === 'string' && !isNullLikeEntity(p.entity) ? p.entity.trim() : null;
-  const { resolveEntitySlugWithSource } = await import('../entities/resolve.ts');
-  const resolved = entity ? await resolveEntitySlugWithSource(ctx.engine, sourceId, entity) : null;
+  // Resolve explicit subjects before admission; never persist a pageless fallback slug.
+  const { resolveRememberEntity } = await import('../verbs/remember-entity.ts');
+  const resolved = entity ? await resolveRememberEntity(ctx.engine, sourceId, entity, { remote: ctx.remote !== false }) : null;
   const inference = entity === null ? await inferRememberTarget(ctx, sourceId, source, p) : null;
   const linked = inference && 'target' in inference ? inference : null;
   const entitySlug = linked?.target.slug ?? resolved?.slug ?? null;
@@ -172,7 +181,7 @@ export async function submitRememberMutation(ctx: OperationContext, params: Reco
     slug, pageId: snapshot?.page.id ?? null, requestId, callerIntent,
     // The transport's session (MCP `_meta.session_id`) is recorded on the fact, as extract_facts records
     // it, so recall's session_id filter finds single facts too. Identity only — never a trust surface.
-    intent: { ...callerIntent, entity_slug: entitySlug, fence, valid_from: new Date().toISOString(), valid_until: validUntil?.toISOString() ?? null,
+    intent: { ...callerIntent, entity_slug: entitySlug, entity_matched_by: resolved?.matched_by ?? null, fence, valid_from: new Date().toISOString(), valid_until: validUntil?.toISOString() ?? null,
       ...(linked ? { entity_inferred: linked.via } : {}), ...(inference && 'warning' in inference ? { entity_warning: inference.warning } : {}),
       session_id: ctx.sessionId ?? null },
     authority, worktreeId: writeThrough ? binding?.worktree_id : null, topologyGeneration: writeThrough ? binding?.topology_generation : null });

@@ -46,6 +46,7 @@ function outcome(id: number, status: 'inserted' | 'duplicate' | 'superseded', en
   const statusText = status === 'inserted' ? `remembered as fact #${id}` : status === 'duplicate'
     ? `already knew this — kept fact #${id}` : `updated — fact #${id} supersedes the previous version`;
   return { id: String(id), status, status_text: statusText, entity_slug: entitySlug,
+    ...(entitySlug !== null && p.entity_matched_by ? { entity_matched_by: p.entity_matched_by } : {}),
     ...(status === 'superseded' && supersededId !== undefined ? { superseded_fact_id: String(supersededId) } : {}),
     ...(status === 'superseded' && p.replaces !== undefined && p.replaces !== null ? { replaced_by_caller: true } : {}),
     valid_until: validUntil ? new Date(validUntil).toISOString() : null,
