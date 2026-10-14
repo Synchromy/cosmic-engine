@@ -1,6 +1,7 @@
 /**
  * `chronicle_extract` Minion job handler (built-in; registered by registerBuiltinHandlers in src/commands/jobs.ts).
  */
+import { derivesFrom, RESTRICTED_SOURCE_REASON } from '../../restricted-no-derive.ts';
 import type { BrainEngine } from '../../engine.ts';
 import type { MinionHandler } from '../types.ts';
 import { UnrecoverableError } from '../errors.ts';
@@ -24,6 +25,7 @@ export function makeChronicleExtractHandler(engine: BrainEngine): MinionHandler 
     const slug = typeof job.data.slug === 'string' ? job.data.slug : undefined;
     if (!slug) throw new Error('chronicle_extract job requires data.slug');
     const sourceId = typeof job.data.sourceId === 'string' ? job.data.sourceId : 'default';
+    if (!derivesFrom(sourceId)) return { skipped: RESTRICTED_SOURCE_REASON, slug, sourceId };
     const { runChronicleJob } = await import('../../chronicle/job.ts');
     const result = await runChronicleJob(engine, {
       slug, sourceId,

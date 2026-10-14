@@ -1,3 +1,4 @@
+import { derivesFrom, RESTRICTED_SOURCE_REASON } from '../restricted-no-derive.ts';
 /**
  * Life Chronicle execution (#5876): run one ledger row to its outcome.
  *
@@ -151,6 +152,11 @@ export async function executeChronicleRow(ctx: ChronicleExecContext, row: Chroni
   const now = ctx.now?.() ?? new Date();
   const done = (state: ChronicleLedgerRow['state'], reason: string | null, extra: Partial<Extract<ChronicleRowOutcome, { kind: 'done' }>> = {}): ChronicleRowOutcome =>
     ({ kind: 'done', state, reason, judged: false, written: 0, retired: 0, costUsd: 0, unpriced: false, dropped: {}, ...extra });
+
+  if (!derivesFrom(row.source_id)) {
+    await finish(engine, row, row.attempts, { state: 'skipped', reason: RESTRICTED_SOURCE_REASON, nextAttemptAt: null });
+    return done('skipped', RESTRICTED_SOURCE_REASON);
+  }
 
   const snapshot = await engine.readPageSnapshot(row.slug, { sourceId: row.source_id });
   if (!snapshot || Number(snapshot.page.id) !== Number(row.page_id)) {

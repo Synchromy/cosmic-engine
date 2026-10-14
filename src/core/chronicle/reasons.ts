@@ -50,6 +50,8 @@ const FIX_BY_BACKFILL = 'Preview with the dry run, then backfill these pages if 
 const FIX_ON_HOST = 'Only the brain host operator can extract these pages: preview and backfill on the brain host if the user agrees to the cost.';
 
 export const CHRONICLE_REASONS = {
+  restricted_source: { stage: 'decision',
+    meaning: () => 'This source is excluded from shared derivations.' },
   auto_chronicle_off: { stage: 'decision',
     meaning: () => 'Automatic event extraction is off on this brain by choice (`gbrain config set auto_chronicle false`).' },
   auto_chronicle_invalid: { stage: 'decision',
