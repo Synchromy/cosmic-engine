@@ -383,6 +383,13 @@ export interface PageFilters {
    * read none of those fields (list_pages).
    */
   listColumnsOnly?: boolean;
+  /**
+   * list_pages_with_frontmatter: keep only pages whose frontmatter holds each
+   * key with exactly this text value (`frontmatter->>key = value`, one value
+   * per key, all keys must match). Keys and values are bound parameters in
+   * both engines, never spliced into SQL.
+   */
+  frontmatterEquals?: Record<string, string>;
 }
 
 /** v0.26.5 — opts for getPage / softDeletePage / restorePage. */

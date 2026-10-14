@@ -33,6 +33,7 @@ const files = readdirSync(OPS_DIR).filter(f => f.endsWith('.ts'))
 const delegates: Record<string, string[]> = {
   'pages.ts': ['persistence/page-mutations.ts', 'persistence/page-prepare.ts', 'persistence/timeline-omission.ts'],
   'page-edit.ts': ['persistence/page-mutations.ts'],
+  'pages-c1.ts': ['persistence/page-mutations.ts'],
   'links.ts': ['ops/edge-temporal.ts', 'ops/backlinks-paged.ts'],
   'timeline.ts': ['persistence/page-mutations.ts', 'persistence/semantic-pages.ts'],
   'admin.ts': ['persistence/page-mutations.ts'],
@@ -87,6 +88,7 @@ describe('an op exposes what the engine can do', () => {
     source_ids:           'resolved from the caller auth scope; a caller naming it would widen its own grant',
     exclude_private:      'THE privacy predicate. Caller-controllable would make private pages requestable',
     list_columns_only:    'internal SQL projection, always enabled by list_pages to avoid loading page bodies; not a result filter',
+    frontmatter_equals:   'reached as list_pages_with_frontmatter\'s `where` (cosmic patch list-pages-with-frontmatter)',
   };
 
   test('every PageFilters field is reachable from some op, or listed as internal with a reason', () => {
