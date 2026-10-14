@@ -250,7 +250,7 @@ export async function resolveAuthCapabilities(auth: AuthInfo, engine: BrainEngin
   // F2: config-plane readiness in the HTTP view (probed entries are host posture, never sent over HTTP).
   const { configReadiness, readinessHttpView } = await import('../readiness.ts');
   return brandCapabilities({
-    ...describeAuthCapabilities(auth, { surface, visibleOperations, delegatedTools: grantCatalog().delegateToolNames }),
+    ...brandCapabilities(describeAuthCapabilities(auth, { surface, visibleOperations, delegatedTools: grantCatalog().delegateToolNames })),
     grant_diagnosis: await resolveGrantDiagnosis(auth, engine, config, { surfaceCeiling: opts.surfaceCeiling, disabled }),
     readiness: readinessHttpView(configReadiness(config, { transport: 'http' }).entries),
   });

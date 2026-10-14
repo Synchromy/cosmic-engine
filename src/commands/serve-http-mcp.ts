@@ -5,6 +5,7 @@
  * through the shared dispatcher, request logging and the admin SSE feed.
  */
 import { createHash } from 'node:crypto';
+import { brandServerName } from '../cosmic/brand.ts';
 import type { Express, Request, Response } from 'express';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -190,7 +191,7 @@ function createMcpRequestServer(
     });
   }
   const server = new Server(
-    { name: 'gbrain', version: VERSION },
+    { name: brandServerName('gbrain'), version: VERSION },
     {
       capabilities: { tools: {}, resources: {} },
       // #4748: contract (+ opt-in writeback section) + deployment identity.

@@ -26,6 +26,7 @@
  */
 
 import { createHash } from 'crypto';
+import { brandServerName } from '../cosmic/brand.ts';
 import { hasScope, operationScopesAllowed } from '../core/scope.ts';
 import { createSkillResources } from './skill-resources.ts';
 import { CAPABILITIES_URI } from './capabilities.ts';
@@ -442,7 +443,7 @@ export async function startHttpTransport(opts: HttpTransportOptions) {
           {
             result: {
               protocolVersion: '2025-03-26',
-              serverInfo: { name: 'gbrain', version: VERSION },
+              serverInfo: { name: brandServerName('gbrain'), version: VERSION },
               capabilities: { tools: {}, resources: {} },
               // #4748: contract (+ opt-in writeback section) + deployment identity.
               instructions: resolveMcpInstructions(fileConfig, process.env, {
