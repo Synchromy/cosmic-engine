@@ -12,6 +12,7 @@ import { setCliExitVerdict } from '../core/cli-force-exit.ts';
 import { consentGate } from '../core/consent-cli.ts';
 import { strictArgsRefusal } from '../cli/strict-args.ts';
 import { PAGES_SUBCOMMANDS, ROUTERS, subcommandHelpRequested } from '../cli/subcommands.ts';
+import { movePageSource } from '../core/move-source.ts';
 
 const SOFT_DELETE_TTL_HOURS_DEFAULT = 72;
 
@@ -86,6 +87,16 @@ async function runPurgeDeleted(engine: BrainEngine, args: string[]): Promise<voi
   }
 }
 
+async function runMoveSource(engine: BrainEngine, args: string[]): Promise<void> {
+  const [slug, to] = args;
+  if (!slug || !to) throw new Error('Usage: gbrain pages move-source <slug> <to> [--from <source>] [--dry-run] [--json]');
+  const fromIndex = args.indexOf('--from');
+  if (fromIndex !== -1 && !args[fromIndex + 1]) throw new Error('--from requires a source id.');
+  const result = await movePageSource(engine, { slug, to, from: fromIndex === -1 ? undefined : args[fromIndex + 1], dryRun: args.includes('--dry-run') });
+  if (args.includes('--json')) console.log(JSON.stringify(result, null, 2));
+  else console.log(`${result.dry_run ? '(dry-run) Would move' : 'Moved'} '${result.slug}' from '${result.from}' to '${result.to}'.`);
+}
+
 export function printUsage(): void {
   console.log(`gbrain pages — page-level operator commands (v0.26.5)
 
@@ -102,6 +113,8 @@ Subcommands:
                                     Asks first: a TTY prompt, --yes, or exit 3 with the
                                     consent payload. Preview with --dry-run --json.
                                     Mirror of the autopilot purge phase.
+  move-source <slug> <to> [--from <source>] [--dry-run] [--json]
+                                    Move one page and its page-local source rows.
 
 Notes:
   Soft-delete a page via \`gbrain delete <slug> --force\`; restore via \`gbrain restore <slug> --force\`
@@ -118,6 +131,9 @@ export async function runPages(engine: BrainEngine, args: string[]): Promise<voi
   switch (sub) {
     case 'purge-deleted': return runPurgeDeleted(engine, args.slice(1));
     case 'purges': case 'unpurge': return (await import('./pages-purges.ts')).runPagePurges(engine, sub, args.slice(1));
+    case 'move-source':
+      try { return await runMoveSource(engine, args.slice(1)); }
+      catch (error) { console.error(error instanceof Error ? error.message : String(error)); setCliExitVerdict(1); return; }
     case undefined:
       printUsage();
       return;
