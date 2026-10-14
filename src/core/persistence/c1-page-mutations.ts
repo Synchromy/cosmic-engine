@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { OperationError } from '../ops/contract.ts';
 import { assertC1CreateAdmissible, isC1ContainmentEnabled, isC1RevisionGuardEnabled } from '../ops/pages-c1.ts';
-import { applySparsePagePatch, CanonicalMutationError, exactCanonicalRevision, readCanonicalPage, type SparsePagePatch } from '../canonical-page-mutations.ts';
+import { applySparsePagePatch, databaseCanonicalForm, databaseCanonicalMarkdown, CanonicalMutationError, exactCanonicalRevision, readCanonicalPage, type SparsePagePatch } from '../canonical-page-mutations.ts';
 import { parseMarkdown, type ParseOpts } from '../markdown.ts';
 import { GATE_OWNED_FRONTMATTER_KEYS } from '../import-screen.ts';
 import { loadActivePackForEngine } from '../schema-pack/engine-resolution.ts';
@@ -56,8 +56,12 @@ export async function prepareC1PagePatch(engine: BrainEngine, row: WriteRequest)
   // prepareFileTarget resolves the owner's recorded path and enforces mirror,
   // confinement, held-file and file/database drift rules before we read bytes.
   const target = await prepareFileTarget(engine, row, snapshot, '', undefined, { activePack: pack.manifest, remote: row.authority.remote });
-  if (!target) throw new OperationError('unavailable', 'patch_page requires an owned canonical Markdown file.');
-  const before = readFileSync(target.path, 'utf8');
+  // Only a source admitted without a repository uses the row as canonical.
+  // Other missing targets retain the owner's file/mirror refusal semantics.
+  const databaseCanonical = !target && row.authority.databaseOnlyReason === 'no_repo_configured';
+  if (!target && !databaseCanonical) throw new OperationError('unavailable', 'patch_page requires an owned canonical Markdown file.');
+  const before = target ? readFileSync(target.path, 'utf8')
+    : databaseCanonicalMarkdown(snapshot.page, snapshot.tags);
   if (!append && exactCanonicalRevision(before) !== row.intent.base_revision) throw new OperationError('revision_conflict',
     'The canonical page changed since base_revision was read.', 'Read get_page again and retry against its canonical_revision.');
   const derived = new Set(['trust_tier', ...GATE_OWNED_FRONTMATTER_KEYS,
@@ -71,6 +75,7 @@ export async function prepareC1PagePatch(engine: BrainEngine, row: WriteRequest)
     if (error instanceof CanonicalMutationError) throw new OperationError('invalid_params', error.message);
     throw error;
   }
+  if (databaseCanonical) content = databaseCanonicalForm(content, slug);
   const parsed = parseMarkdown(content, `${slug}.md`, { validate: true, expectedSlug: slug, activePack: pack.manifest });
   if (parsed.errors?.length) throw new OperationError('invalid_params', 'Patched canonical Markdown failed validation.');
   const core = await prepareCoreGuard(engine, { row, snapshot, incoming: parsed });
@@ -84,14 +89,11 @@ export async function prepareC1PagePatch(engine: BrainEngine, row: WriteRequest)
   }
   return {
     observedRevision: snapshot.revision,
-    file: { ...target, content },
+    ...(target ? { file: { ...target, content } } : {}),
     ...(core ? { exclusiveSources: core.exclusiveSources } : {}),
     validate: async tx => {
       if (/^(false|0|off|no)$/i.test(await tx.getConfig('sync.write_through') ?? 'true')) {
         throw new OperationError('unavailable', 'Canonical write-through was disabled before publication.');
-      }
-      if (append && !/^(true|1|on|yes)$/i.test(await tx.getConfig('writer.append_page_event') ?? 'false')) {
-        throw new OperationError('unavailable', 'append_page_event was disabled before publication.');
       }
       await imported?.validate(tx);
       await core?.validate(tx);

@@ -387,6 +387,16 @@ export const OPERATION_MANIFEST: OperationMeta[] = [
         "required": true,
         "description": "Exact canonical_revision returned by get_page."
       },
+      "type": {
+        "type": "string",
+        "required": false,
+        "description": "New page type (lowercase slug grammar). type is a reserved frontmatter key, so this is the only way to retype a page through patch_page."
+      },
+      "title": {
+        "type": "string",
+        "required": false,
+        "description": "New page title (single line, 1-300 characters). title is a reserved frontmatter key, so this is the only way to retitle a page through patch_page."
+      },
       "frontmatter_set": {
         "type": "object",
         "required": false,
@@ -455,7 +465,6 @@ export const OPERATION_MANIFEST: OperationMeta[] = [
     },
     "mutating": true,
     "scope": "write",
-    "publishGateKey": "writer.append_page_event",
     "cliHints": {
       "name": "append-page-event",
       "positional": [
