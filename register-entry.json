@@ -1,0 +1,18 @@
+{
+  "id": "put-page-usage",
+  "branch": "upstream/put-page-usage",
+  "what": "put_page (and capture, which delegates to it) returns outcome (created | updated | unchanged), embed_tokens and embed_cost_usd for the indexing the write caused, and serve-http's success insert merges those three into the mcp_request_log row's params; status is unchanged and params was already jsonb, so no migration. embed_tokens is the engine's per-chunk estimate (content_chunks.token_count), priced at the configured embedding model's rate",
+  "state": "permanent",
+  "upstream": {
+    "pr": null,
+    "seen": "none",
+    "checked": "2026-10-14",
+    "note": "carried patch, not offered upstream: the request-log usage fields serve Cosmic's usage ledger; reviewed against upstream v0.60.145.0 (0cd46b7da): intent is not covered upstream. The top-level put_page/capture outcome replaces the upstream receipt object with created|updated|unchanged; the full receipt remains at write_request.outcome. Embedding after the reply deadline updates persistence_requests.outcome but does not backfill mcp_request_log.params, so the log is a lower bound for cosmic-hub #1477; the hub can read persistence_requests.outcome for late usage. Usage sums pending chunks' stored token_count, with the upstream tokenizer as a fallback when provider-free publication left it null; embedding never rewrites token_count."
+  },
+  "since": "2026-10-06",
+  "depends_on": [],
+  "hub_uses": "none called yet: the hub's usage ledger reads mcp_request_log.params outcome/embed_tokens/embed_cost_usd once its engine pin moves (cosmic-hub #1477, decision 1)",
+  "tests": [
+    "test/put-page-usage.test.ts"
+  ]
+}
