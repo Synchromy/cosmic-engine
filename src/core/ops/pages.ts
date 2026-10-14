@@ -465,20 +465,20 @@ const list_pages: Operation = {
   outputRedaction: 'retrieval',
   description: LIST_PAGES_DESCRIPTION,
   params: {
-    type: { type: 'string' },
-    tag: { type: 'string' },
-    limit: { type: 'number', description: 'Max rows.' },
+    type: { type: 'string', description: 'Page type.' },
+    tag: { type: 'string', description: 'Tag.' },
+    limit: { type: 'number', description: 'Max rows (default 50; remote max 100).' },
     offset: {
-      type: 'number', description: 'Skip rows.',
+      type: 'number', description: 'Rows to skip.',
     },
     // v0.29 — surface filter that already exists on PageFilters.
     updated_after: {
       type: 'string',
-      description: 'Updated after ISO time.',
+      description: 'Only pages updated after this ISO time.',
     },
     updated_after_slug: {
       type: 'string',
-      description: 'Cursor slug.',
+      description: "Last row's slug (with updated_after).",
     },
     // Same move as updated_after above: effective_after/effective_before have
     // been on PageFilters and implemented in both engines since v0.46.25.0
@@ -490,18 +490,18 @@ const list_pages: Operation = {
     effective_after: {
       type: 'string',
       description:
-        'Subject date >= ISO; not updated_at; no undated.',
+        'Subject date >= ISO.',
     },
     effective_before: {
       type: 'string',
       description:
-        'Subject effective_date <= ISO date/time; future OK.',
+        'Subject date <= ISO; future OK.',
     },
     sort: {
-      type: 'string',
+      type: 'string', description: 'Default updated_desc.',
       enum: [...LIST_PAGES_SORT_VALUES],
     },
-    include_deleted: { type: 'boolean', description: 'Soft-deleted too.' },
+    include_deleted: { type: 'boolean', description: 'Include soft-deleted pages.' },
     // #4400 — list_pages had no source-scoping param at all: unlike
     // search/query it silently ignored any caller-supplied source and always
     // fell back to whatever federatedSearchScope() resolved from ctx alone,
