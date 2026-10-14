@@ -23,6 +23,7 @@
  * once; only this instance's marker is removed.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { brandServerName } from '../cosmic/brand.ts';
 import type { Socket } from 'node:net';
 import { randomBytes } from 'node:crypto';
 import { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js';
@@ -64,7 +65,7 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 }
 
 async function serveStatusMcp(state: StatusModeState, req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const server = new McpServer({ name: 'gbrain', version: VERSION }, { capabilities: { tools: {} }, instructions: statusInstructionLine(state, 'http') });
+  const server = new McpServer({ name: brandServerName('gbrain'), version: VERSION }, { capabilities: { tools: {} }, instructions: statusInstructionLine(state, 'http') });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [HTTP_STATUS_TOOL_DEF] }));
   server.setRequestHandler(CallToolRequestSchema, async (request) => (request.params.name === STATUS_TOOL_NAME
     ? statusToolResult(state, 'http') : statusModeErrorResult(state, request.params.name, 'http')));

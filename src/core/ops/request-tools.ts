@@ -302,7 +302,7 @@ const request_tools: Operation = {
         // Area names are non-contractual grouping labels (amendment 22).
         const area = op.area ?? 'other';
         const bucket = groups.get(area) ?? [];
-        bucket.push({ name: op.name, one_line: firstSentenceOf(op.description) });
+        bucket.push({ name: op.name, one_line: firstSentenceOf(brandText(op.description)) });
         groups.set(area, bucket);
       }
       return [...groups.entries()]
