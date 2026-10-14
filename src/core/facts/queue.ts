@@ -20,6 +20,7 @@
 
 import { currentAIAttribution, withAIAttribution, type AIAttribution } from '../ai/invocation-guard.ts';
 import { registerBackgroundWorkDrainer } from '../background-work.ts';
+import { currentChatPhase, withChatPhaseOrNone } from '../ai/chat-usage.ts';
 
 export interface FactsQueueCounters {
   enqueued: number;
@@ -49,6 +50,12 @@ interface QueueEntry {
   enqueuedAt: number;
   /** Model calls the job makes are attributed to whoever enqueued it. */
   attribution: AIAttribution;
+  /**
+   * Chat usage phase of the caller that queued the job. The pump runs in
+   * whichever async context kicked it, which can be another caller's, so the
+   * job runs under this instead.
+   */
+  chatPhase: string | null;
 }
 
 export class FactsQueue {
@@ -103,7 +110,11 @@ export class FactsQueue {
       this.pending.shift();
       this.counters.dropped_overflow += 1;
     }
-    this.pending.push({ job, sessionId, enqueuedAt: Date.now(), attribution: { ...currentAIAttribution(), effect: 'facts-queue' } });
+    this.pending.push({
+      job, sessionId, enqueuedAt: Date.now(),
+      attribution: { ...currentAIAttribution(), effect: 'facts-queue' },
+      chatPhase: currentChatPhase(),
+    });
     this.counters.enqueued += 1;
     // Non-blocking pump: schedule on microtask so callers stay sync.
     queueMicrotask(() => { void this.pump(); });
@@ -217,7 +228,8 @@ export class FactsQueue {
 
   private async runEntry(entry: QueueEntry): Promise<void> {
     try {
-      await withAIAttribution(entry.attribution, () => entry.job(this.internalAbort.signal));
+      await withAIAttribution(entry.attribution, () =>
+        withChatPhaseOrNone(entry.chatPhase, () => entry.job(this.internalAbort.signal)));
       this.counters.completed += 1;
     } catch (err) {
       // Don't propagate; caller sees nothing — the queue surface is fire-and-
