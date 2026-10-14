@@ -38,8 +38,8 @@ export function restrictCycleDerivations(phases: CyclePhase[], sourceId: string 
   return derivesFrom(sourceId) ? phases : phases.filter(phase => !RESTRICTED_DERIVATION_PHASES.has(phase));
 }
 
-export function excludedCyclePhaseResult(phase: CyclePhase, sourceId: string | undefined): PhaseResult {
-  const restricted = !derivesFrom(sourceId) && RESTRICTED_DERIVATION_PHASES.has(phase);
+export function excludedCyclePhaseResult(phase: CyclePhase, sourceId: string | undefined, cycleSourceId: string | undefined): PhaseResult {
+  const restricted = !derivesFrom(cycleSourceId) && RESTRICTED_DERIVATION_PHASES.has(phase);
   return {
     phase,
     status: 'skipped',
@@ -49,7 +49,7 @@ export function excludedCyclePhaseResult(phase: CyclePhase, sourceId: string | u
       : `excluded from implicit non-default source cycle (${PHASE_SCOPE[phase]} scope)`,
     details: {
       reason: restricted ? RESTRICTED_SOURCE_REASON : 'excluded_from_implicit_source_cycle',
-      source_id: sourceId,
+      source_id: restricted ? cycleSourceId : sourceId,
       phase_scope: PHASE_SCOPE[phase],
     },
   };

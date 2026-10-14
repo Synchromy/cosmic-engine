@@ -9,10 +9,10 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { PGLiteEngine } from '../src/core/pglite-engine.ts';
 import { runFactsBackstop, runFactsPipeline } from '../src/core/facts/backstop.ts';
-import { runChronicleBackstop } from '../src/core/chronicle/backstop.ts';
+import { decideChronicle } from '../src/core/chronicle/ledger.ts';
 import { extractTimelineFromMeetings } from '../src/core/extract-timeline-from-meetings.ts';
 import { operations, type OperationContext } from '../src/core/operations.ts';
-import { derivesFrom } from '../src/core/restricted-no-derive.ts';
+import { derivesFrom, excludedCyclePhaseResult } from '../src/core/restricted-no-derive.ts';
 import { resetPgliteState } from './helpers/reset-pglite.ts';
 import { markShortLivedCliProcess, __resetShortLivedCliForTests } from '../src/core/facts/cli-process-mode.ts';
 import { runPersistenceEffects } from '../src/core/persistence/effects.ts';
@@ -69,6 +69,12 @@ const emailPage = {
   frontmatter: {},
 };
 
+const chronicleInput = {
+  authority: null, noExtract: false, enabled: true,
+  settings: { recentDays: 30, settleSeconds: 0 },
+  now: new Date('2026-01-15T12:00:00Z'),
+};
+
 async function jobCount(name: string): Promise<number> {
   const rows = await engine.executeRaw<{ n: number }>('SELECT count(*)::int AS n FROM minion_jobs WHERE name = $1', [name]);
   return Number(rows[0]!.n);
@@ -121,28 +127,33 @@ describe('restricted-no-derive: a restricted email about a person adds nothing t
   });
 });
 
-describe('restricted-no-derive: the backstops and their workers', () => {
-  test('the facts and chronicle backstops refuse restricted, before any other gate', async () => {
+describe('restricted-no-derive: the facts backstop, chronicle decisions and their workers', () => {
+  test('the facts backstop and chronicle decision refuse restricted, before any other gate', async () => {
     expect(await runFactsBackstop(emailPage, { engine, sourceId: 'restricted', source: 'mcp:put_page', sessionId: null }))
       .toMatchObject({ enqueued: false, skipped: 'restricted_source' });
     expect(await runFactsBackstop(emailPage, { engine, sourceId: 'restricted', source: 'mcp:put_page', sessionId: null, mode: 'inline' }))
       .toMatchObject({ inserted: 0, skipped: 'restricted_source' });
-    expect(await runChronicleBackstop(emailPage, { engine, sourceId: 'restricted' }))
-      .toEqual({ enqueued: false, skipped: 'restricted_source' });
+    expect(decideChronicle({ ...chronicleInput, page: { ...emailPage, source_id: 'restricted' } }))
+      .toEqual({ state: 'skipped', reason: 'restricted_source', nextAttemptAt: null });
     expect(await jobCount('facts-absorb')).toBe(0);
   });
 
-  test('the facts and chronicle backstops refuse founders the same way', async () => {
+  test('the facts backstop and chronicle decision refuse founders the same way', async () => {
     expect(await runFactsBackstop(emailPage, { engine, sourceId: 'founders', source: 'mcp:put_page', sessionId: null }))
       .toMatchObject({ enqueued: false, skipped: 'restricted_source' });
-    expect(await runChronicleBackstop(emailPage, { engine, sourceId: 'founders' }))
-      .toEqual({ enqueued: false, skipped: 'restricted_source' });
+    expect(decideChronicle({ ...chronicleInput, page: { ...emailPage, source_id: 'founders' } }))
+      .toEqual({ state: 'skipped', reason: 'restricted_source', nextAttemptAt: null });
     expect(await jobCount('facts-absorb')).toBe(0);
   });
 
   test('control: the facts backstop queues the same page in a visible source', async () => {
     expect(await runFactsBackstop(emailPage, { engine, sourceId: 'shared', source: 'mcp:put_page', sessionId: null }))
       .toMatchObject({ enqueued: true });
+  });
+
+  test('control: the chronicle decision for the same page in a visible source is not restricted', () => {
+    expect(decideChronicle({ ...chronicleInput, page: { ...emailPage, source_id: 'shared' } }).reason)
+      .not.toBe('restricted_source');
   });
 
   test('extract_facts in restricted or founders derives nothing and says why', async () => {
@@ -211,6 +222,22 @@ describe('restricted-no-derive: meetings, entities and the cycle', () => {
     const rows = await engine.executeRaw<{ n: number }>(
       "SELECT count(*)::int AS n FROM pages WHERE slug LIKE 'people/%' OR slug LIKE 'companies/%'");
     expect(Number(rows[0]!.n)).toBe(0);
+  });
+
+  test('cycle exclusion receipts preserve the requested source except for restricted derivations', () => {
+    for (const cycleSourceId of ['shared', 'restricted', 'founders']) {
+      expect(excludedCyclePhaseResult('orphans', undefined, cycleSourceId).details).toMatchObject({
+        reason: 'excluded_from_implicit_source_cycle', source_id: undefined,
+      });
+      expect(excludedCyclePhaseResult('orphans', 'shared', cycleSourceId).details).toMatchObject({
+        reason: 'excluded_from_implicit_source_cycle', source_id: 'shared',
+      });
+    }
+    for (const cycleSourceId of ['restricted', 'founders']) {
+      expect(excludedCyclePhaseResult('extract_facts', undefined, cycleSourceId).details).toMatchObject({
+        reason: 'restricted_source', source_id: cycleSourceId,
+      });
+    }
   });
 
   test('a cycle for restricted skips the phases that derive, and keeps its own links and timeline', async () => {

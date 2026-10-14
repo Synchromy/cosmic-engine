@@ -1910,7 +1910,7 @@ export async function runCycle(
   const cycleDate = engine
     ? await import('./cycle/cycle-date.ts').then(m => m.resolveCycleDate(engine)).catch(() => undefined)
     : undefined;
-  const phaseResults: PhaseResult[] = excludedPhases.map(phase => excludedCyclePhaseResult(phase, cycleSourceId));
+  const phaseResults: PhaseResult[] = excludedPhases.map(phase => excludedCyclePhaseResult(phase, opts.sourceId, cycleSourceId));
 
   // Capture as a const so it narrows to `string` inside the `else` branches of
   // the per-phase `if (brainDir === null)` guards, even within async closures
