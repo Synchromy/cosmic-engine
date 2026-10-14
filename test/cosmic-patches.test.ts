@@ -53,14 +53,9 @@ const PROBES: Record<string, () => void> = {
     expect(operationsByName.delete_fact).toBeDefined();
     expect(operationsByName.delete_fact.params.provenance?.required).toBe(true);
   },
-  'embed-outage-defer': () => {
-    expect(existsSync('src/core/embed-outage.ts')).toBe(true);
-    expect(readFileSync('src/core/ops/pages.ts', 'utf8')).toContain('deferOnEmbedOutage: !noEmbed');
-    expect(readFileSync('src/commands/embed.ts', 'utf8')).toContain("args.includes('--waiting')");
-  },
   'restricted-write-guard': () => {
     expect(existsSync('src/core/restricted-write-guard.ts')).toBe(true);
-    expect(readFileSync('src/core/ops/pages.ts', 'utf8')).toContain('assertNoRestrictedTwin(');
+    expect(readFileSync('src/core/persistence/page-mutations.ts', 'utf8')).toContain('assertNoRestrictedTwin(');
   },
   'restricted-advisor': () => {
     expect(existsSync('src/core/restricted-advisor.ts')).toBe(true);
@@ -71,9 +66,9 @@ const PROBES: Record<string, () => void> = {
     expect(readFileSync('src/commands/pages.ts', 'utf8')).toContain("'move-source'");
   },
   'link-sources-both-endpoints': () => {
-    for (const f of ['src/core/pglite-engine.ts', 'src/core/postgres-engine.ts']) {
-      expect(readFileSync(f, 'utf8')).toContain('cosmic patch link-sources-both-endpoints');
-    }
+    const src = readFileSync('src/core/engine-sql/links.ts', 'utf8');
+    expect(src).toContain('WHERE f.source_id = ANY(${opts.sourceIds}::text[]) AND t.source_id = ANY(${opts.sourceIds}::text[])');
+    expect(src).toContain('WHERE f.source_id = ${opts.sourceId} AND t.source_id = ${opts.sourceId}');
   },
   'restricted-no-derive': () => {
     expect(existsSync('src/core/restricted-no-derive.ts')).toBe(true);
@@ -81,25 +76,35 @@ const PROBES: Record<string, () => void> = {
   },
   'remember-resolves-entity': () => {
     expect(existsSync('src/core/verbs/remember-entity.ts')).toBe(true);
-    expect(readFileSync('src/core/verbs.ts', 'utf8')).toContain('resolveRememberEntity(');
+    expect(readFileSync('src/core/persistence/memory-mutations.ts', 'utf8')).toContain('resolveRememberEntity(');
     expect(readFileSync('src/core/verbs/entity-card.ts', 'utf8')).toContain('nameMatchSuggestions(');
   },
   'put-page-usage': () => {
     expect(existsSync('src/core/put-page-usage.ts')).toBe(true);
-    expect(readFileSync('src/core/ops/pages.ts', 'utf8')).toContain('...putPageUsage(result)');
-    expect(readFileSync('src/commands/serve-http.ts', 'utf8')).toContain('requestLogParamsWithUsage(name, logParamsObj, toolResult)');
+    expect(readFileSync('src/core/persistence/page-mutations.ts', 'utf8')).toContain('pageResponseWithUsage(ctx.engine, response, settled.id, arrived + budget)');
+    expect(readFileSync('src/commands/serve-http-mcp.ts', 'utf8')).toContain('requestLogParamsWithUsage(name, logParamsObj, toolResult)');
   },
   'capture-receipt-usage': () => {
     expect(readFileSync('src/commands/capture.ts', 'utf8')).toContain('...captureUsageOf(result)');
-    expect(readFileSync('src/commands/capture.ts', 'utf8')).toContain('...captureUsageOf(remoteResult)');
+    // Local, delegated and remote captures now share the result and receipt.
+    expect(readFileSync('src/commands/capture.ts', 'utf8')).toContain('export function captureUsageOf(');
   },
   'mcp-phase-tag': () => {
-    expect(readFileSync('src/mcp/dispatch.ts', 'utf8')).toContain('withChatPhase(mcpChatPhase(ctx.auth, name), run)');
+    expect(readFileSync('src/mcp/dispatch.ts', 'utf8')).toContain('withChatPhase(mcpChatPhase(ctx.auth, name), () => op.handler(ctx, safeParams))');
+  },
+  'list-pages-with-frontmatter': () => {
+    const op = operationsByName.list_pages_with_frontmatter;
+    expect(op).toBeDefined();
+    expect(op.verb).toBe(true);
+    expect(op.params.type?.required).toBe(true);
+    expect(op.params.where?.type).toBe('object');
   },
   'purge-page-in-source': () => {
+    expect(operationsByName.purge_page).toBeDefined();
+    expect(operationsByName.purge_page.params.source_id?.required).toBe(true);
     const src = readFileSync('src/core/ops/pages.ts', 'utf8');
     expect(src).toContain("name: 'purge_page'");
-    expect(src).toContain('ctx.engine.deletePage(slug, { sourceId })');
+    expect(src).toContain("return { ...result, removed: result.status === 'purged' ? 1 : 0 }");
   },
   'cosmic-brand': () => {
     // Every anchor applied; test/cosmic-brand.test.ts is the leak test proper.

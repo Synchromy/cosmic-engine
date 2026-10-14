@@ -171,20 +171,29 @@ beforeEach(async () => {
   // side present.
   await engine.mergeOntologyFact({
     entitySlug: 'people/open-person', dimension: 'role', value: 'secretvalue',
-    source: 'meetings/secret-sync', validFrom: '2026-05-01',
+    source: 'meetings/secret-sync', validFrom: '2026-05-01', visibility: 'world',
   });
   await engine.mergeOntologyFact({
     entitySlug: 'people/open-person', dimension: 'role', value: 'openvalue',
-    source: 'meetings/open-sync', validFrom: '2026-01-01',
+    source: 'meetings/open-sync', validFrom: '2026-01-01', visibility: 'world',
   });
   await engine.mergeOntologyFact({
     entitySlug: 'people/conf-person', dimension: 'role', value: 'secretvalue',
-    source: 'meetings/secret-sync', validFrom: '2026-05-01',
+    source: 'meetings/secret-sync', validFrom: '2026-05-01', visibility: 'world',
   });
   await engine.mergeOntologyFact({
     entitySlug: 'people/conf-person', dimension: 'role', value: 'yes',
-    source: 'meetings/open-sync', validFrom: '2026-01-01',
+    source: 'meetings/open-sync', validFrom: '2026-01-01', visibility: 'world',
   });
+  // Atom visibility defaults to private in 0.60. This suite exercises the
+  // provenance PAGE gate: world atoms must still be hidden when their page
+  // is private. Prove the open observation exists for the local control
+  // before resolution selects the newer private-page observation.
+  const observations = await engine.executeRaw<{ value: string }>(
+    "SELECT value FROM facts WHERE entity_slug='people/open-person' AND dimension='role' AND expired_at IS NULL AND visibility='world'",
+  );
+  expect(observations.map(row => row.value)).toContain('openvalue');
+  expect(observations.map(row => row.value)).toContain('secretvalue');
 }, 60_000);
 
 type Row = { page_slug: string; event_slug: string | null; summary: string; detail: string };
