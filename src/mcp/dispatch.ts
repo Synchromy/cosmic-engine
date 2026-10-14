@@ -43,6 +43,7 @@ import { enforceReadTrustFloor } from '../core/eligibility/registry.ts';
 import { invalidateHotMemoryForEngine } from '../core/facts/meta-hook.ts';
 import { admittedPendingReceipt, type WriteReceipt } from '../core/persistence/types.ts';
 import { currentVerifiedLocalWriter, readLocalWriter, verifyLocalWriter, withVerifiedLocalRegistration } from '../core/persistence/identity.ts';
+import { withChatPhase, currentChatPhase } from '../core/ai/chat-usage.ts';
 
 // WP3: normalization + validation moved to validate-params.ts (direct unit
 // surface). Re-exported here so existing imports/tests keep working.
@@ -708,6 +709,24 @@ export function buildOperationContext(
   };
 }
 
+const MCP_PHASE_CLIENT_MAX_CHARS = 128;
+
+/**
+ * The chat usage phase for a tool call an MCP client made:
+ * `mcp:<client>:<operation>`. The client is the name the transports already
+ * log as the agent (OAuth `client_name`, else the client id; the legacy
+ * token name), and "unknown" when the call carries no auth (stdio). Each
+ * candidate is cleaned first, so a blank name falls through to the id. Control
+ * characters are replaced and the name is clamped so a client-chosen name
+ * cannot bloat or break the ledger. Operation names contain no ':', so the
+ * operation is always the last segment. Never reads the token.
+ */
+export function mcpChatPhase(auth: AuthInfo | undefined, opName: string): string {
+  const clean = (v: string | undefined) => (v ?? '').trim().replace(/[\u0000-\u001f\u007f]/g, '_');
+  const client = (clean(auth?.clientName) || clean(auth?.clientId) || 'unknown').slice(0, MCP_PHASE_CLIENT_MAX_CHARS);
+  return `mcp:${client}:${opName}`;
+}
+
 /**
  * Resolve operation, validate params, build context, invoke handler, format result.
  *
@@ -907,15 +926,20 @@ export async function dispatchToolCall(
         if (!(error instanceof OperationError) || error.code !== 'writer_registration_required' || op.requiredScopes?.length) throw error;
       }
     }
+    // Attribute handler chat calls to the MCP caller unless a phase is already
+    // set. Explicit phases inside the handler still take precedence.
+    const run = () => currentChatPhase() === null
+      ? withChatPhase(mcpChatPhase(ctx.auth, name), () => op.handler(ctx, safeParams))
+      : op.handler(ctx, safeParams);
     const result = registration
       ? await withVerifiedLocalRegistration(engine, registration, async verified => {
         if (!verified.remote) throw opError('permission_denied', 'This registration is not an agent-facing connection.',
           `${name} on this stdio connection needs the agent-facing stdio writer registration, which only the user can create in a terminal on the brain host.`,
           { fix: hostFix(ctx, ['gbrain', 'auth', 'local-writer', 'register', 'stdio', '--dry-run', '--json'],
             'Previews the agent-facing stdio registration; the user reruns it without --dry-run (with --replace and the complete grant when a registration exists).') });
-        return op.handler(ctx, safeParams);
+        return run();
       })
-      : await op.handler(ctx, safeParams);
+      : await run();
     // Hot memory built before a write (forget, remember, …) is never served after it, on every transport.
     if (op.mutating) invalidateHotMemoryForEngine(engine);
     // [E4] verb success metrics: budget drops + entity hit/miss when present.
