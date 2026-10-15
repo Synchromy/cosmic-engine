@@ -46,7 +46,7 @@ const PORT_B = 19834; // --surface verbs + GBRAIN_MCP_FORCE_SURFACE=full
 const BASE_A = `http://127.0.0.1:${PORT_A}`;
 const BASE_B = `http://127.0.0.1:${PORT_B}`;
 
-const CANONICAL_VERBS = ['recall', 'remember', 'entity', 'synthesize', 'forget', 'context_pack', 'delta'];
+const CANONICAL_VERBS = ['recall', 'remember', 'entity', 'synthesize', 'forget', 'context_pack', 'delta', 'list_pages_with_frontmatter'];
 
 describe('serve --http --surface verbs ceiling E2E (hermetic PGLite)', () => {
   let homeA: string;
@@ -203,7 +203,7 @@ describe('serve --http --surface verbs ceiling E2E (hermetic PGLite)', () => {
     // frozen seven — if the canonical list drifts, fail HERE with a clear
     // message, not inside a tools/list diff.
     expect(([...VERB_NAMES] as string[]).sort()).toEqual([...CANONICAL_VERBS].sort());
-    expect(VERB_NAMES.length).toBe(7);
+    expect(VERB_NAMES.length).toBe(8);
   });
 
   test('ceiling: bare legacy token sees EXACTLY the 7 frozen verbs', async () => {

@@ -288,7 +288,7 @@ describe.skipIf(!CAN_RUN_KEYLESS)('install real-grok door — keyless tier (seri
     }
   }, 120_000);
 
-  test('INSTALL: keyless init → documented-shape `grok mcp add` → TOML carries server + env → doctor handshakes 7 verbs', () => {
+  test('INSTALL: keyless init → documented-shape `grok mcp add` → TOML carries server + env → doctor handshakes 8 verbs', () => {
     const home = trackHome('install');
     seedGrokConfig(home);
     const ws = join(home, 'ws');
@@ -323,8 +323,9 @@ describe.skipIf(!CAN_RUN_KEYLESS)('install real-grok door — keyless tier (seri
     const checks = report.servers?.find((s) => s.name === 'gbrain')?.checks ?? [];
     expect(checks.every((c) => c.passed)).toBe(true);
     expect(checks.some((c) => /handshake OK/i.test(c.label))).toBe(true);
-    // The verbs surface end-to-end, keyless: seven verbs discovered.
-    expect(checks.some((c) => /7 tools discovered/i.test(c.label))).toBe(true);
+    // The verbs surface end-to-end, keyless: eight verbs discovered (the
+    // upstream seven plus the carried list_pages_with_frontmatter).
+    expect(checks.some((c) => /8 tools discovered/i.test(c.label))).toBe(true);
 
     // Soft probe (exit-0-only; shape logged, not asserted).
     const list = runGrok(home, ws, ['mcp', 'list', '--json'], binDir);
