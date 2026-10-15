@@ -15,6 +15,7 @@ import { clampSearchLimit, type BrainEngine } from '../engine.ts';
 import type { Page } from '../types.ts';
 import { decodeDeepResearchId, deepResearchPageUrl } from '../deep-research-id.ts';
 import { PageSnapshotAmbiguousError, type PageSnapshot } from '../page-state/types.ts';
+import { brandText } from '../../cosmic/brand.ts';
 import { serializePageToMarkdown } from '../markdown.ts';
 import { pageTrustForRead, projectFetchText, projectGetPage, readQuarantined } from './get-page-projection.ts';
 import { MIN_TRUST_PARAM } from '../eligibility/policy.ts';
@@ -470,6 +471,59 @@ const purge_deleted_pages: Operation = {
   cliHints: { name: 'purge-deleted', hidden: true },
 };
 
+const purge_page: Operation = {
+  name: 'purge_page',
+  outputRedaction: 'no_stored_text',
+  description: 'Admin-only hard-delete of one page row at (source_id, slug), whether live or soft-deleted. Cascades through its chunks, versions, links, and timeline with no recovery window. Local CLI only; a missing row returns removed: 0.',
+  params: {
+    slug: { type: 'string', required: true, description: 'Slug of the page to permanently remove.' },
+    source_id: { type: 'string', required: true, description: 'Source holding the page to permanently remove. Required; never defaults to ctx.sourceId or default.' },
+  },
+  mutating: true,
+  scope: 'admin',
+  localOnly: true,
+  handler: async (ctx, p) => {
+    if (ctx.remote !== false) {
+      throw new OperationError('permission_denied', 'purge_page is only available to trusted local callers.');
+    }
+    const slug = p.slug as string;
+    const sourceId = p.source_id;
+    if (typeof sourceId !== 'string' || sourceId.trim() === '') {
+      throw new OperationError('invalid_params', 'purge_page requires a non-empty source_id.');
+    }
+    validatePageSlug(slug);
+    if (ctx.dryRun) return { dry_run: true, action: 'purge_page', slug, source_id: sourceId };
+    // purge_page adapts its source-explicit contract to upstream's coordinated purge.
+    const snapshot = await ctx.engine.readPageSnapshot(slug, { sourceId, includeDeleted: true });
+    if (!snapshot) return { removed: 0 };
+    const { randomUUID } = await import('node:crypto');
+    const requestId = randomUUID();
+    const result = await (await import('../persistence/page-purge.ts')).finishPagePurge(ctx,
+      await submitPageMutation(ctx, { operation: 'delete_page', params: {
+        slug, source_id: sourceId, purge: true,
+        expected_revision: snapshot.revision, request_id: requestId,
+      } }));
+    if (result.status === 'purged') {
+      // Beam placeCopy rewrites the same content; clear only this request's page, fact and take tombstones (which reference the journal row ID).
+      await ctx.engine.transaction(async tx => {
+        await tx.executeRaw('SELECT id FROM sources WHERE id=$1 FOR UPDATE', [sourceId]);
+        const cleared = await tx.executeRaw<{ request_id: string | null }>(`DELETE FROM page_purges p USING persistence_requests r
+          WHERE p.source_id=$1 AND p.slug=$2 AND p.request_id=r.id
+            AND r.source_id=$1 AND r.slug=$2 AND r.request_id=$3::uuid
+          RETURNING p.request_id::text`, [sourceId, slug, requestId]);
+        const requests = cleared.map(r => r.request_id).filter((id): id is string => !!id);
+        if (requests.length) {
+          await tx.executeRaw('DELETE FROM fact_purges WHERE source_id=$1 AND request_id=ANY($2::uuid[])', [sourceId, requests]);
+          await tx.executeRaw('DELETE FROM take_purges WHERE source_id=$1 AND request_id=ANY($2::uuid[])', [sourceId, requests]);
+        }
+      });
+    }
+    // A pending receipt must not claim a row has already been removed.
+    return { ...result, removed: result.status === 'purged' ? 1 : 0 };
+  },
+  cliHints: { name: 'purge-page', positional: ['slug'] },
+};
+
 const LIST_PAGES_SORT_VALUES = ['updated_desc', 'updated_asc', 'created_desc', 'slug'] as const;
 type ListPagesSort = typeof LIST_PAGES_SORT_VALUES[number];
 
@@ -738,7 +792,7 @@ const capture: Operation = {
 // page-level soft-delete recovery + admin purge, then capture.)
 export const pagesOperations: Operation[] = [
   get_page, put_page, patchPageOperation, appendPageEventOperation, delete_page, list_pages,
-  restore_page, purge_deleted_pages, capture,
+  restore_page, purge_deleted_pages, purge_page, capture,
   fetch_page,
   listPagesWithFrontmatterOperation,
 ];

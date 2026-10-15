@@ -1,4 +1,5 @@
 import type { OperationMeta, ParamDef } from '../core/ops/contract.ts';
+import { brandText } from '../cosmic/brand.ts';
 
 export interface McpToolDef {
   name: string;
@@ -44,7 +45,7 @@ export interface McpToolDef {
 export function paramDefToSchema(p: ParamDef): Record<string, unknown> {
   return {
     type: p.type === 'array' ? 'array' : p.type,
-    ...(p.description ? { description: p.description } : {}),
+    ...(p.description ? { description: brandText(p.description) } : {}),
     ...(p.enum ? { enum: p.enum } : {}),
     ...(p.default !== undefined ? { default: p.default } : {}),
     ...(p.items ? { items: paramDefToSchema(p.items) } : {}),
@@ -110,7 +111,7 @@ export function buildToolDefs(ops: OperationMeta[], opts?: { strictParams?: bool
     const annotations = toolAnnotations(op);
     return {
       name: op.name,
-      description: op.description,
+      description: brandText(op.description),
       inputSchema: {
         type: 'object' as const,
         properties: {

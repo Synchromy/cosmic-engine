@@ -63,7 +63,7 @@ export const OPERATION_MANIFEST: OperationMeta[] = [
       },
       "entity": {
         "type": "string",
-        "description": "Subject (name or slug)."
+        "description": "Existing page (name or slug)."
       },
       "infer_entity": {
         "type": "boolean",
@@ -654,6 +654,33 @@ export const OPERATION_MANIFEST: OperationMeta[] = [
     "area": "pages"
   },
   {
+    "name": "purge_page",
+    "outputRedaction": "no_stored_text",
+    "description": "Admin-only hard-delete of one page row at (source_id, slug), whether live or soft-deleted. Cascades through its chunks, versions, links, and timeline with no recovery window. Local CLI only; a missing row returns removed: 0.",
+    "params": {
+      "slug": {
+        "type": "string",
+        "required": true,
+        "description": "Slug of the page to permanently remove."
+      },
+      "source_id": {
+        "type": "string",
+        "required": true,
+        "description": "Source holding the page to permanently remove. Required; never defaults to ctx.sourceId or default."
+      }
+    },
+    "mutating": true,
+    "scope": "admin",
+    "localOnly": true,
+    "cliHints": {
+      "name": "purge-page",
+      "positional": [
+        "slug"
+      ]
+    },
+    "area": "pages"
+  },
+  {
     "name": "capture",
     "idempotent": true,
     "outputRedaction": "no_stored_text",
@@ -777,6 +804,7 @@ export const OPERATION_MANIFEST: OperationMeta[] = [
   },
   {
     "name": "list_pages_with_frontmatter",
+    "outputRedaction": "retrieval",
     "description": "MEMORY VERB (v1, additive): list the newest pages of one type whose frontmatter holds the given text values, each with its frontmatter and its canonical_revision (pass that to patch_page as base_revision). The frontmatter and the revision describe the same canonical snapshot. canonical_revision is null when the canonical bytes cannot be read; such a row cannot be patched until they can. Same source scope and private-page rules as list_pages. Default 50 rows; remote callers are capped at 100. protocol_version rides every response.",
     "params": {
       "type": {
@@ -5148,6 +5176,31 @@ export const OPERATION_MANIFEST: OperationMeta[] = [
     "mutating": true,
     "scope": "write",
     "area": "memory"
+  },
+  {
+    "name": "delete_fact",
+    "outputRedaction": "no_stored_text",
+    "description": "Delete one fact you wrote: its row in the page's Markdown facts fence and its facts row, together, under the source and page locks. Refuses unless `provenance` equals the row's recorded provenance exactly, the row is on a page, and the fence holds it as the database records it; a refused call changes nothing. Records no withdrawal, so the same claim can be remembered again later. To retract a wrong fact, use forget instead.",
+    "params": {
+      "id": {
+        "type": "number",
+        "required": true,
+        "description": "Fact id to delete (fact_id from remember or recall)."
+      },
+      "provenance": {
+        "type": "string",
+        "required": true,
+        "description": "The provenance the fact was written with (remember's provenance). Must match the row exactly."
+      }
+    },
+    "mutating": true,
+    "scope": "write",
+    "area": "memory",
+    "annotations": {
+      "title": "delete a fact you wrote",
+      "destructiveHint": true,
+      "idempotentHint": false
+    }
   },
   {
     "name": "purge_fact",

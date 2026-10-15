@@ -1,5 +1,6 @@
 import type { AuthInfo } from '../ops/contract.ts';
 import { hasScope, operationScopesAllowed } from '../scope.ts';
+import { brandCapabilities } from '../../cosmic/brand.ts';
 import type { BrainEngine } from '../engine.ts';
 import type { GBrainConfig } from '../config.ts';
 import { TOKEN_TTL_MAX_SECONDS, TOKEN_TTL_MIN_SECONDS, normalizeGrantBrain, validGrantPrefixes } from '../grants/model.ts';
@@ -248,11 +249,11 @@ export async function resolveAuthCapabilities(auth: AuthInfo, engine: BrainEngin
     && opAllowedForBoundClient(auth, op) && !disabled.has(op.name)).map(op => op.name);
   // F2: config-plane readiness in the HTTP view (probed entries are host posture, never sent over HTTP).
   const { configReadiness, readinessHttpView } = await import('../readiness.ts');
-  return {
+  return brandCapabilities({
     ...describeAuthCapabilities(auth, { surface, visibleOperations, delegatedTools: grantCatalog().delegateToolNames }),
     grant_diagnosis: await resolveGrantDiagnosis(auth, engine, config, { surfaceCeiling: opts.surfaceCeiling, disabled }),
     readiness: readinessHttpView(configReadiness(config, { transport: 'http' }).entries),
-  };
+  });
 }
 
 /** No credentials or private inventories. Uses the already authenticated grant
