@@ -17,6 +17,8 @@ import { slugUnderBoundPrefixes } from './context.ts';
 import { reconcileLinksForWriter, type WithheldTargets } from './reconcile-writer-links.ts';
 import { isAutoLinkEnabled, isAutoTimelineEnabled, parseTimelineEntries } from '../link-extraction.ts';
 import { privatePagesFilterFragment, resolveExcludePrivatePages } from '../search/private-visibility.ts';
+import { managedPersistenceEnabled } from '../persistence/ownership.ts';
+import { publishManagedPageTimeline } from '../../commands/extract-timeline-db.ts';
 
 function stringList(v: unknown, name: string): string[] {
   if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) {
@@ -27,6 +29,7 @@ function stringList(v: unknown, name: string): string[] {
 
 const reconcile_page_links: Operation = {
   name: 'reconcile_page_links',
+  outputRedaction: 'no_stored_text',
   description: 'Local only. Run link and timeline reconciliation for one page a remote writer wrote, held to that writer\'s grant: outbound edges only, only to existing pages it may read, timeline entries on this page only. Called by the host after a remote put_page, never by the writer.',
   params: {
     slug: { type: 'string', required: true, description: 'The page the remote writer wrote.' },
@@ -118,6 +121,12 @@ const reconcile_page_links: Operation = {
         const entries = parseTimelineEntries(parsed.compiled_truth + '\n' + parsed.timeline);
         if (entries.length === 0 || ctx.dryRun) {
           autoTimeline = ctx.dryRun ? { entries: entries.length } : { created: 0 };
+        } else if (await managedPersistenceEnabled(ctx.engine)) {
+          const created = await publishManagedPageTimeline(ctx.engine, slug, sourceId, page);
+          if (created === 'unsettled') {
+            throw new OperationError('unavailable', `reconcile_page_links: ${slug} timeline publication is unsettled; run it again.`);
+          }
+          autoTimeline = { created };
         } else {
           const created = await ctx.engine.transaction(async tx => {
             await tx.lockPageKeys([{ sourceId, slug }]);

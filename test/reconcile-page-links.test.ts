@@ -17,6 +17,9 @@ import type { OperationContext } from '../src/core/operations.ts';
 import { registerLocalWriter } from '../src/core/persistence/identity.ts';
 import { resetGateway } from '../src/core/ai/gateway.ts';
 import { __resetPrivateVisibilityCacheForTests, REMOTE_PRIVATE_PAGES_KEY } from '../src/core/search/private-visibility.ts';
+import { withCoordinatedWrite } from '../src/core/persistence/context.ts';
+import { TEST_WRITE_ATTRIBUTION } from './helpers/write-attribution.ts';
+import { disposePersistenceConsumer } from '../src/core/persistence/service.ts';
 
 let engine: PGLiteEngine;
 
@@ -98,6 +101,64 @@ const HANDOFF = [
   '',
   '- **2026-10-13** | Handed the work over',
 ].join('\n');
+
+// Protects backfill on persistence-enabled brains: reverting the managed route
+// returns writer_coordinator_required instead of created: 1. Existing cases
+// use an unmanaged engine; this uses the real coordinator with no new seam.
+test('managed writer guard permits grant-scoped links and coordinated timeline backfill', async () => {
+  const ctx = makeCtx();
+  await putLocal('people/alice-example', '---\ntitle: Alice Example\ntype: person\n---\n\nA person.');
+  await putRemote('handoffs/managed-example', HANDOFF);
+  await engine.executeRaw('UPDATE persistence_brain SET enabled=true WHERE singleton=1');
+  await engine.setConfig('sync.write_through', 'false');
+  try {
+    await engine.setConfig('mcp.remote_auto_links', 'false');
+    const slug = 'handoffs/managed-example';
+    await disposePersistenceConsumer(engine);
+    // Model a remote commit made before upstream projected timeline rows.
+    await engine.transaction(tx => withCoordinatedWrite(tx, ['default'], () => tx.executeRaw(
+      'DELETE FROM timeline_entries WHERE page_id=(SELECT id FROM pages WHERE source_id=$1 AND slug=$2)',
+      ['default', slug]), TEST_WRITE_ATTRIBUTION));
+    const params = { slug, source_id: 'default', read_sources: ['default'], bound_slug_prefixes: ['handoffs/'] };
+    const timeline = () => engine.executeRaw('SELECT id FROM timeline_entries WHERE page_id=(SELECT id FROM pages WHERE source_id=$1 AND slug=$2)', ['default', slug]);
+    expect(await timeline()).toEqual([]);
+    expect(await engine.getLinks(slug, { sourceId: 'default' })).toEqual([]);
+    // Prove the managed guard is active for this page.
+    await expect(engine.addTimelineEntriesBatch([{ slug, source_id: 'default', date: '2026-10-13', source: 'test', summary: 'Guard probe', detail: '' }],
+      { auditSite: 'mcp.put_page.autolink' })).rejects.toThrow('writer_coordinator_required');
+    const requestsBefore = await engine.executeRaw('SELECT request_id FROM persistence_requests ORDER BY request_id');
+    const preview = await reconcile.handler({ ...ctx, dryRun: true }, params) as Record<string, any>;
+    expect(preview.auto_links).toMatchObject({ created: 1, removed: 0 });
+    expect(preview.auto_timeline).toEqual({ entries: 1 });
+    expect(await timeline()).toEqual([]);
+    expect(await engine.getLinks(slug, { sourceId: 'default' })).toEqual([]);
+    expect(await engine.executeRaw('SELECT request_id FROM persistence_requests ORDER BY request_id')).toEqual(requestsBefore);
+    const result = await reconcile.handler(ctx, params) as Record<string, any>;
+    expect(result.auto_links).toMatchObject({ created: 1, removed: 0, errors: 0 });
+    expect(result.auto_timeline).toEqual({ created: 1 });
+    expect((await engine.getLinks(slug, { sourceId: 'default' })).map(link => link.to_slug)).toEqual(['people/alice-example']);
+    expect(await timeline()).toHaveLength(1);
+    const again = await reconcile.handler(ctx, params) as Record<string, any>;
+    expect(again.auto_timeline).toEqual({ created: 0 });
+    expect(await timeline()).toHaveLength(1);
+    const getPage = engine.getPage.bind(engine);
+    engine.getPage = async (...args) => {
+      const page = await getPage(...args);
+      return page ? { ...page, content_hash: 'older-revision' } : page;
+    };
+    try {
+      const stale = await reconcile.handler(ctx, params) as Record<string, any>;
+      expect(stale.auto_links.error).toContain('changed while it was being reconciled');
+      expect(stale.auto_timeline.error).toContain('changed while it was being reconciled');
+    } finally {
+      engine.getPage = getPage;
+    }
+    expect(await timeline()).toHaveLength(1);
+  } finally {
+    await disposePersistenceConsumer(engine);
+    await engine.executeRaw('UPDATE persistence_brain SET enabled=false WHERE singleton=1');
+  }
+}, 120000);
 
 describe('reconcile_page_links (cosmic-hub #610)', () => {
   test('a remote handoff page gets edges to the pages it links, and none to a page the writer cannot read', async () => {
