@@ -19,7 +19,7 @@
  * test that does not look. The leak test (test/cosmic-brand.test.ts) is the
  * second net under this one.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 interface Edit { file: string; find: string; replace: string; import?: { names: string[]; from: string } }
 
@@ -93,6 +93,56 @@ export const EDITS: Edit[] = [
     import: BRAND('../../', ['brandCapabilities']) },
 ];
 
+/** v0.60.145.0 moved the HTTP edges and put_page advisories into modules,
+ * and made the verified principal authoritative for transport classification.
+ * Keep the earlier layout for checking the register's existing lane; each
+ * layout still requires every one of its anchors before writing anything. */
+function editsForRoot(root: string): Edit[] {
+  if (!existsSync(`${root}/src/commands/serve-http-mcp.ts`)) return EDITS;
+  const moved: Record<string, Edit | null> = {
+    "ctx.auth.clientId.startsWith('gbrain_cl_')": {
+      file: 'src/core/ops/contract.ts',
+      find: "return auth.clientId.startsWith('gbrain_cl_') ? 'oauth' : 'legacy';",
+      replace: "return isCredential(auth.clientId, 'gbrain_cl_') ? 'oauth' : 'legacy';",
+      import: BRAND('../../', ['isCredential']),
+    },
+    // Both old readers now call authTransport; patch its fallback once.
+    "authInfo.clientId.startsWith('gbrain_cl_')": null,
+    "      autoLinks = { skipped: 'remote', hint };\n      autoTimeline = { skipped: 'remote', hint };": {
+      file: 'src/core/persistence/page-advisories.ts',
+      find: "hint: 'Body wikilinks are saved as text but NOT reconciled into the graph inline. With mention_links: queued, a post-commit `links` effect (listed by get_write_request) adds plain mention edges to existing pages this connection can read; typed and frontmatter edges are not added. A stdio `gbrain serve` sweeps them at startup + on idle; `gbrain serve --http` does not self-sweep — run `gbrain sweep --once` (delegates to a live serve over IPC), use trusted local capture/put_page for inline link extraction, or add_link for edges needed now.'",
+      replace: "hint: brandText('Body wikilinks are saved as text but NOT reconciled into the graph inline. With mention_links: queued, a post-commit `links` effect (listed by get_write_request) adds plain mention edges to existing pages this connection can read; typed and frontmatter edges are not added. A stdio `gbrain serve` sweeps them at startup + on idle; `gbrain serve --http` does not self-sweep — run `gbrain sweep --once` (delegates to a live serve over IPC), use trusted local capture/put_page for inline link extraction, or add_link for edges needed now.')",
+      import: BRAND('../../', ['brandText']),
+    },
+    '  return describeAuthCapabilities(auth, { surface, visibleOperations, delegatedTools: grantCatalog().delegateToolNames });': {
+      file: 'src/core/harness/capabilities.ts',
+      find: '    ...describeAuthCapabilities(auth, { surface, visibleOperations, delegatedTools: grantCatalog().delegateToolNames }),',
+      replace: '    ...brandCapabilities(describeAuthCapabilities(auth, { surface, visibleOperations, delegatedTools: grantCatalog().delegateToolNames })),',
+      import: BRAND('../../', ['brandCapabilities']),
+    },
+  };
+  const edits = EDITS.flatMap((e): Edit[] => {
+    if (Object.hasOwn(moved, e.find)) return moved[e.find] ? [moved[e.find]!] : [];
+    if (e.file !== 'src/commands/serve-http.ts') return [e];
+    const resource = e.find.startsWith('resourceName:');
+    return [{ ...e, file: resource ? 'src/commands/serve-http-oauth.ts' : 'src/commands/serve-http-mcp.ts',
+      import: BRAND('../', [resource ? 'brandResourceName' : 'brandServerName']) }];
+  });
+  // Upstream's callable-aware contract changed the capabilities sentence.
+  // Keep the whoami alternative only when that tool is actually callable.
+  edits.push({ file: 'src/mcp/instructions.ts',
+    find: "  out.push(`When you need this connection's effective permissions or setup readiness, read gbrain://capabilities${c('whoami') ? ' (or `whoami`)' : ''}. A full tool surface does not imply administrative or delegation authority. Missing capabilities require an explicit host grant.`);",
+    replace: "  out.push(brandName() && c('whoami') ? \"Read whoami to understand this connection's effective permissions or setup readiness. A full tool surface does not imply administrative or delegation authority. Missing capabilities require an explicit host grant.\" : `When you need this connection's effective permissions or setup readiness, read gbrain://capabilities${c('whoami') ? ' (or `whoami`)' : ''}. A full tool surface does not imply administrative or delegation authority. Missing capabilities require an explicit host grant.`);",
+    import: BRAND('../', ['brandName']) });
+  // Alternate HTTP initialize paths must carry the same server identity.
+  for (const file of ['src/mcp/http-transport.ts', 'src/commands/serve-http-status.ts']) {
+    edits.push({ file, find: "{ name: 'gbrain', version: VERSION }",
+      replace: "{ name: brandServerName('gbrain'), version: VERSION }",
+      import: BRAND('../', ['brandServerName']) });
+  }
+  return edits;
+}
+
 function addImport(src: string, names: string[], from: string): string {
   const line = `import { ${names.join(', ')} } from '${from}';`;
   const existing = new RegExp(`^import \\{([^}]*)\\} from '${from.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}';$`, 'm');
@@ -114,7 +164,7 @@ export function apply(root: string, check = false): { applied: string[]; already
   const applied: string[] = [], already: string[] = [], missing: string[] = [];
   const files = new Map<string, string>();
   const read = (f: string) => files.get(f) ?? readFileSync(`${root}/${f}`, 'utf8');
-  for (const e of EDITS) {
+  for (const e of editsForRoot(root)) {
     let src = read(e.file);
     const label = `${e.file}: ${e.find.split('\n')[0].trim().slice(0, 70)}`;
     if (src.includes(e.replace)) already.push(label);

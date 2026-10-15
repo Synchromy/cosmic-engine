@@ -1,8 +1,8 @@
 {
   "$comment": "The Synchromy patch register. The ONLY list of what cosmic/<lane> carries on top of upstream. scripts/cosmic-patches.ts reads it to rebuild, verify and check upstream; test/cosmic-patches.test.ts proves every patch is present. See PATCHES.md for the why.",
   "upstream_repo": "garrytan/gbrain",
-  "lane": "cosmic/v0.50.0",
-  "base_tag": "v0.50.0.0",
+  "lane": "cosmic/v0.60.145",
+  "base_tag": "v0.60.145.0",
   "hub": {
     "repo": "Synchromy/cosmic-hub",
     "ref": "main",
@@ -11,7 +11,7 @@
   "patches": [
     {
       "id": "c1-contained-mutations",
-      "branch": "v050/c1-contained-mutations",
+      "branch": "v060/c1-contained-mutations",
       "what": "revision-guarded canonical page mutations and receipts; the patch_page op (on v0.50: takes the source filesystem lock before the page lock, v0.50's hierarchy)",
       "state": "permanent",
       "upstream": {
@@ -31,7 +31,7 @@
     },
     {
       "id": "idempotent-append-page-event",
-      "branch": "upstream/idempotent-append-page-event",
+      "branch": "v060/idempotent-append-page-event",
       "what": "append_page_event, an idempotent typed interaction append",
       "state": "permanent",
       "upstream": {
@@ -52,7 +52,7 @@
     },
     {
       "id": "patch-page-type-title",
-      "branch": "upstream/patch-page-type-title",
+      "branch": "v060/patch-page-type-title",
       "what": "patch_page accepts dedicated type and title fields",
       "state": "permanent",
       "upstream": {
@@ -72,7 +72,7 @@
     },
     {
       "id": "effective-date-path-and-created",
-      "branch": "upstream/effective-date-path-and-created",
+      "branch": "v060/effective-date-path-and-created",
       "what": "effective_date reads a slug path date and frontmatter.created",
       "state": "permanent",
       "upstream": {
@@ -90,7 +90,7 @@
     },
     {
       "id": "c1-database-canonical",
-      "branch": "upstream/c1-database-canonical",
+      "branch": "v060/c1-database-canonical",
       "what": "C1 mutations commit against the database row when no repo is configured, which is how the hub runs",
       "state": "permanent",
       "upstream": {
@@ -112,7 +112,7 @@
     },
     {
       "id": "sources-set-id",
-      "branch": "upstream/sources-set-id",
+      "branch": "v060/sources-set-id",
       "what": "sources set-id: a source's identity, changed safely",
       "state": "permanent",
       "upstream": {
@@ -130,7 +130,7 @@
     },
     {
       "id": "list-pages-effective-date",
-      "branch": "upstream/list-pages-effective-date",
+      "branch": "v060/list-pages-effective-date",
       "what": "list_pages exposes effective_after / effective_before",
       "state": "upstream-open",
       "upstream": {
@@ -148,7 +148,7 @@
     },
     {
       "id": "ops-expose-what-the-engine-can-do",
-      "branch": "upstream/ops-expose-what-the-engine-can-do",
+      "branch": "v060/ops-expose-what-the-engine-can-do",
       "what": "a filter the engine honours that no op exposes is a bug (contract test)",
       "state": "permanent",
       "upstream": {
@@ -168,7 +168,7 @@
     },
     {
       "id": "delete-fence-fact",
-      "branch": "upstream/delete-fence-fact",
+      "branch": "v060/delete-fence-fact",
       "what": "delete_fact: delete one fence row and its facts row together, under the source and page locks, for the writer that names the row's provenance exactly; records no withdrawal",
       "state": "permanent",
       "upstream": {
@@ -187,28 +187,8 @@
       ]
     },
     {
-      "id": "embed-outage-defer",
-      "branch": "upstream/embed-outage-defer",
-      "what": "an embedder outage (401/402/403, key limit, 429 after one capped retry, 5xx, refused connection) lands a put_page write without its embedding, marked in cosmic_embed_waiting; `gbrain embed --waiting` catches it up and get_health counts the marked pages. A dimension mismatch, oversize payload or bad input still throws",
-      "state": "permanent",
-      "upstream": {
-        "pr": null,
-        "seen": "none",
-        "checked": "2026-09-30",
-        "note": "carried patch, not offered upstream: it relaxes upstream's deliberate no-silent-unembedded-pages rule (Codex C2), which holds here only because the waiting pages are counted and drained"
-      },
-      "since": "2026-09-30",
-      "depends_on": [
-        "c1-contained-mutations"
-      ],
-      "hub_uses": "the reconcile-loop catch-up tick and the dashboard's waiting banner (C-19, add-write-queue-for-outages), not yet written",
-      "tests": [
-        "test/embed-outage.test.ts"
-      ]
-    },
-    {
       "id": "restricted-write-guard",
-      "branch": "upstream/restricted-write-guard",
+      "branch": "v060/restricted-write-guard",
       "what": "a remote put_page/capture whose target source is not restricted, onto a slug that exists in restricted, is refused naming the restricted page; local writes and remote writes to a slug shared by visible sources are untouched",
       "state": "permanent",
       "upstream": {
@@ -226,7 +206,7 @@
     },
     {
       "id": "link-sources-both-endpoints",
-      "branch": "upstream/link-sources-both-endpoints",
+      "branch": "v060/link-sources-both-endpoints",
       "what": "a scoped list_link_sources counts an edge only when both its endpoints are in the caller's scope, so a member-level client's counts carry no edge into restricted; unscoped local callers are unchanged",
       "state": "permanent",
       "upstream": {
@@ -244,7 +224,7 @@
     },
     {
       "id": "move-source",
-      "branch": "upstream/move-source",
+      "branch": "v060/move-source",
       "what": "`gbrain pages move-source <slug> <to> [--from <source>]` moves one page between engine sources in one transaction, keeping its id (chunks, versions, links, raw data and timeline follow it) and re-keying its page-local source rows; refused onto any row already at the destination slug; a schema walk fails on a source_id table it does not decide about",
       "state": "permanent",
       "upstream": {
@@ -262,7 +242,7 @@
     },
     {
       "id": "restricted-advisor",
-      "branch": "upstream/restricted-advisor",
+      "branch": "v060/restricted-advisor",
       "what": "the advisor reports on the whole brain, so a remote caller whose read grant does not cover every source is refused it (permission_denied, naming no source); trusted local callers and grants covering every source are unchanged",
       "state": "permanent",
       "upstream": {
@@ -280,7 +260,7 @@
     },
     {
       "id": "restricted-no-derive",
-      "branch": "upstream/restricted-no-derive",
+      "branch": "v060/restricted-no-derive",
       "what": "what the engine derives takes no input from the `restricted` source, nor from `founders`, which starts restricted (C-72 finding 10): the facts and chronicle backstops and their workers, extract_facts and the raw-turn facts pipeline (runFactsPipeline), extract_entities, the meeting timeline fan-out, the patterns phase's reflections, the per-source loops of conversation_facts_backfill and enrich_thin, consolidate's all-source facts scan, and a cycle run for restricted skip it; a restricted page keeps its own links, timeline and embedding",
       "state": "permanent",
       "upstream": {
@@ -298,7 +278,7 @@
     },
     {
       "id": "remember-resolves-entity",
-      "branch": "upstream/remember-resolves-entity",
+      "branch": "v060/remember-resolves-entity",
       "what": "remember resolves its entity through the entity verb's resolution (alias > exact slug > exact title > slug-suffix; a title or suffix match only on a person, company, organization, entity or project page), then the facts resolver's name arms, and refuses an entity that matches no page (not_found, entity_not_found, nearest pages in the suggestion and as JSON in detail) instead of filing the fact under a slug no page has; entity's miss suggestions put title and slug matches (resolve_slugs, plus the last slug segment) ahead of content matches",
       "state": "permanent",
       "upstream": {
@@ -317,7 +297,7 @@
     },
     {
       "id": "put-page-usage",
-      "branch": "upstream/put-page-usage",
+      "branch": "v060/put-page-usage",
       "what": "put_page (and capture, which delegates to it) returns outcome (created | updated | unchanged), embed_tokens and embed_cost_usd for the indexing the write caused, and serve-http's success insert merges those three into the mcp_request_log row's params; status is unchanged and params was already jsonb, so no migration. embed_tokens is the engine's per-chunk estimate (content_chunks.token_count), priced at the configured embedding model's rate",
       "state": "permanent",
       "upstream": {
@@ -335,7 +315,7 @@
     },
     {
       "id": "capture-receipt-usage",
-      "branch": "upstream/capture-receipt-usage",
+      "branch": "v060/capture-receipt-usage",
       "what": "the `gbrain capture --json` receipt carries put_page's usage fields (outcome created | updated | unchanged, embed_tokens, embed_cost_usd), on the local and thin-client paths, absent when put_page did not report them; a CLI capture writes no mcp_request_log row, so this is how a CLI caller sees them",
       "state": "permanent",
       "upstream": {
@@ -355,7 +335,7 @@
     },
     {
       "id": "mcp-phase-tag",
-      "branch": "upstream/mcp-phase-tag",
+      "branch": "v060/mcp-phase-tag",
       "what": "model calls an MCP client originated log chat_usage_log phase mcp:<client>:<operation>, which records where the call came from; an inner explicit phase keeps its name; facts-queue jobs keep the queueing caller's phase, so extraction queued by put_page logs as mcp:<client>:put_page",
       "state": "permanent",
       "upstream": {
@@ -365,15 +345,43 @@
         "note": "no upstream PR yet; upstream-bound, offering it needs a decision"
       },
       "since": "2026-09-29",
-      "depends_on": [],
+      "depends_on": [
+        "restricted-no-derive"
+      ],
       "hub_uses": "pricing track Te1 (cosmic-hub #991, epic #985): the billing consumer classifies a row by the operation after the last colon of its phase; put_page extraction is excluded from credits (the write allowance covers it)",
       "tests": [
         "test/mcp-chat-phase.test.ts"
       ]
     },
     {
+      "id": "list-pages-with-frontmatter",
+      "branch": "v060/list-pages-with-frontmatter",
+      "what": "list_pages_with_frontmatter, an additive read verb: the newest pages of one type whose frontmatter holds given text values, each with its frontmatter and canonical_revision from one canonical snapshot; on the verbs, starter and full surfaces",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-11",
+        "note": "new product surface for the hub's handoff tools; a maintainer call, not offered"
+      },
+      "since": "2026-10-11",
+      "depends_on": [
+        "c1-contained-mutations",
+        "c1-database-canonical",
+        "ops-expose-what-the-engine-can-do"
+      ],
+      "hub_uses": "handoffs_list: serve/handoff-tools.ts (cosmic-hub C-137, add-agent-handoffs); add-handoff-delivery (C-138) reuses it for prompt_context",
+      "tests": [
+        "test/list-pages-with-frontmatter.test.ts",
+        "test/memory-verbs-conformance.test.ts",
+        "test/operations-source-isolation-matrix.test.ts",
+        "test/remote-privacy-sweep.test.ts",
+        "test/ops-expose-what-the-engine-can-do.test.ts"
+      ]
+    },
+    {
       "id": "purge-page-in-source",
-      "branch": "upstream/purge-page-in-source",
+      "branch": "v060/purge-page-in-source",
       "what": "purge_page { slug, source_id }: hard-deletes one page row in one named source, live or soft-deleted, with its chunks, versions, links and timeline (FK cascades); source_id required with no default; admin scope, local only; a missing row answers removed: 0",
       "state": "permanent",
       "upstream": {
@@ -383,10 +391,51 @@
         "note": "carried patch, not offered upstream: removing a Beam page's copy from the source members read (C-114, add-beam-access)"
       },
       "since": "2026-10-12",
-      "depends_on": [],
-      "hub_uses": "placeCopy removes a Beam page's copy from the source it must not be in (C-114, add-beam-access), through gb.call('purge_page', …, { source }); not yet written",
+      "depends_on": [
+        "c1-contained-mutations",
+        "idempotent-append-page-event",
+        "patch-page-type-title",
+        "effective-date-path-and-created",
+        "c1-database-canonical",
+        "sources-set-id",
+        "list-pages-effective-date",
+        "ops-expose-what-the-engine-can-do",
+        "delete-fence-fact",
+        "restricted-write-guard",
+        "move-source",
+        "restricted-no-derive",
+        "remember-resolves-entity",
+        "put-page-usage",
+        "capture-receipt-usage",
+        "mcp-phase-tag",
+        "list-pages-with-frontmatter",
+        "link-sources-both-endpoints"
+      ],
+      "hub_uses": "purge_page: serve/beam-access.ts placeCopy removes a Beam page's copy from the source it must not be in (C-114, add-beam-access), through gb.call('purge_page', …, { source }); not yet written",
       "tests": [
         "test/purge-page-in-source.test.ts"
+      ]
+    },
+    {
+      "id": "reconcile-page-links",
+      "branch": "v060/reconcile-page-links",
+      "what": "reconcile_page_links, a local-only op: the host runs put_page's link and timeline reconciliation for one page a remote writer wrote, held to that writer's grant (outbound edges only, only to existing pages in a write source it reads, none to a private page remote readers cannot see, the page inside its slug fence, timeline entries on the page only); dry_run counts and writes nothing",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-13",
+        "note": "not offered: upstream skips remote reconciliation by design and runs the serve sweep instead; this op exists for cosmic-hub's per-writer policy"
+      },
+      "since": "2026-10-13",
+      "depends_on": [
+        "purge-page-in-source"
+      ],
+      "hub_uses": "serve/remote-links.ts (cosmic-hub #610): after a remote put_page or capture, the gateway queues the page and the drain calls reconcile_page_links with the writer's write source, read grant and slug fence; bin/reconcile-remote-links.ts backfills pages written before",
+      "tests": [
+        "test/reconcile-page-links.test.ts",
+        "test/operations-trust-boundary.test.ts",
+        "test/operations-coverage-ledger.test.ts"
       ]
     },
     {
@@ -540,6 +589,15 @@
       "branch": "upstream/facts-since-composition",
       "pr": 4882,
       "in": "v0.48.5.0 (#4954)"
+    },
+    {
+      "branch": "upstream/embed-outage-defer",
+      "pr": null,
+      "in": "v0.60.145.0 (superseded by upstream's own behaviour, not merged from our PR)",
+      "superseded": true,
+      "decided": "2026-10-13 by Khoa",
+      "reason": "Upstream v0.51+ already does this: an embedding failure never blocks a write (put_page commits, chunks stay un-embedded), get_health counts them as missing_embeddings, and gbrain embed --stale catches them up. Verified on plain v0.60.145.0 on 2026-10-13 (put_page during a simulated outage: committed, 1 chunk, 0 embedded, missing_embeddings 1; upstream's import-embed-outage tests 2/2). Upstream's sweep catches every un-embedded chunk whatever the cause, broader than our waiting marker, which missed Daniel's 3,076 chunks on 3 Oct. The hub's reconcile loop already falls back to the stale sweep when embed --waiting is absent. Difference accepted: upstream also defers misconfiguration errors (e.g. wrong vector size) instead of throwing; missing_embeddings and the hub's stale-sweep incident report surface them.",
+      "follow_up": "cosmic-hub: add gbrain embed --facts to bin/embed-waiting.sh's stale sweep (our --waiting also caught up facts written during an outage); a future dashboard banner reads get_health missing_embeddings. Ships with the hub pin PR."
     }
   ]
 }

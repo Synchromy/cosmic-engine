@@ -29,6 +29,7 @@ import { readOps } from './helpers/ops-registry.ts';
 import { linkEntityIdentity } from '../src/core/entity-identity.ts';
 import { SAFE_FENCE_CHUNKER_VERSION } from '../src/core/search/safe-chunks.ts';
 import { upsertOpenLoop } from '../src/core/loops/loops-store.ts';
+import { replaceWantedLinks } from '../src/core/wanted-links-store.ts';
 import { __setChatTransportForTests, __setEmbedTransportForTests, configureGateway, resetGateway } from '../src/core/ai/gateway.ts';
 import { withEnv } from './helpers/with-env.ts';
 import { runInitBrainPack } from '../src/core/skillpack/init-brain-pack.ts';
@@ -73,10 +74,11 @@ type Row = Swept | Brainwide | Denied | Withheld | Skip;
 // keyless check, then the chat call fails, so think and synthesize answer
 // with their extractive digest of what the caller's gather found.
 const llmFails: Around = async fn => {
+  configureGateway({ env: { ANTHROPIC_API_KEY: 'sk-test-hermetic' } });
   __setChatTransportForTests(async () => { throw new Error('c72 sweep: no LLM'); });
   __setEmbedTransportForTests(async () => { throw new Error('c72 sweep: no embedder'); });
   try { return await withEnv({ ANTHROPIC_API_KEY: 'sk-test-hermetic' }, fn); }
-  finally { __setChatTransportForTests(null); __setEmbedTransportForTests(null); }
+  finally { __setChatTransportForTests(null); __setEmbedTransportForTests(null); resetGateway(); }
 };
 // A 1x1 PNG, and a multimodal embedder answered by a stubbed fetch, as
 // search-by-image-op.test.ts does: every image chunk scores the same.
@@ -104,6 +106,12 @@ const withoutQuestion = (r: unknown): unknown => ({ ...(r as Record<string, unkn
 // Keep the same dispositions as operations-source-isolation-matrix: this is a
 // second ratchet over that identical public read surface, not a hand-picked list.
 const MATRIX: Row[] = [
+  { name: 'assemble_evidence', mode: 'swept', args: { hits: [{ source_id: 'restricted', slug: RESTRICTED_SLUG, chunk_id: 0 }], return_unit: 'page' } },
+  { name: 'wanted_pages', mode: 'swept', args: { limit: 100 } },
+  { name: 'get_skill_asset', mode: 'skip', reason: 'Reads approved canonical shared-skill revision files, not memory pages or the legacy filesystem pack; source/revision authorization is swept in shared-skills-catalog.test.ts.' },
+  { name: 'join_brain', mode: 'skip', reason: 'Creates own shared-skill enrollment and returns catalog delivery metadata, not memory pages; requires registered membership authority (shared-skills/membership.ts).' },
+  { name: 'leave_brain', mode: 'skip', reason: 'Stops own shared-skill enrollment; returns enrollment state without reading memory pages (shared-skills/membership.ts).' },
+  { name: 'sync_brain_skills', mode: 'skip', reason: 'Delivers authorized approved shared-skill revisions and own batch state, not memory pages; catalog authorization is covered by the shared-skills suites (shared-skills/membership.ts).' },
   { name: 'entity', mode: 'swept', args: { name: 'people/c72-restricted-person' }, localControl: 'entity reads the scalar ctx.sourceId rather than a federated remote grant' },
   // A question visible pages answer too: with nothing gathered, synthesize
   // refuses as unavailable, which would prove nothing about the member.
@@ -143,6 +151,8 @@ const MATRIX: Row[] = [
   { name: 'fetch', mode: 'swept', args: { id: RESTRICTED_SLUG } },
   { name: 'entity_identity_list', mode: 'swept', args: {} },
   { name: 'list_pages', mode: 'swept', args: { limit: 100 } },
+  // cosmic patch list-pages-with-frontmatter (C-137): same scope as list_pages, plus frontmatter.
+  { name: 'list_pages_with_frontmatter', mode: 'swept', args: { type: 'note', limit: 100 } },
   { name: 'search', mode: 'swept', args: { query: RESTRICTED, limit: 20 } },
   { name: 'query', mode: 'swept', args: { query: RESTRICTED, limit: 20 } },
   { name: 'get_tags', mode: 'swept', args: { slug: RESTRICTED_SLUG } },
@@ -213,9 +223,17 @@ async function call(engine: PGLiteEngine, name: string, args: Record<string, unk
 // A remote read serves only chunks written by the fence-safe chunker
 // (safe-chunks.ts, chunker_version >= SAFE_FENCE_CHUNKER_VERSION). Hand-seeded
 // chunks are version 0, which would hide them from the admin too and make the
-// member's search, query and get_chunks checks vacuous. Seal every page.
+// member's search, query and get_chunks checks vacuous. These fixtures use
+// engine.putPage/upsertChunks, not the put_page operation: they enqueue no
+// persistence effects to drain. Certify the hand-built text projections at
+// their canonical revision too (0.60's independent projection-readiness gate).
 async function sealChunks(engine: PGLiteEngine): Promise<void> {
-  await engine.executeRaw(`UPDATE pages SET chunker_version = ${SAFE_FENCE_CHUNKER_VERSION}`);
+  for (const page of await engine.executeRaw<{ slug: string; source_id: string; compiled_truth: string }>(
+    'SELECT p.slug, p.source_id, p.compiled_truth FROM pages p WHERE NOT EXISTS (SELECT 1 FROM content_chunks c WHERE c.page_id=p.id)',
+  )) {
+    await engine.upsertChunks(page.slug, [{ chunk_index: 0, chunk_text: page.compiled_truth, chunk_source: 'compiled_truth', token_count: 10 }], { sourceId: page.source_id });
+  }
+  await engine.executeRaw(`UPDATE pages SET chunker_version = ${SAFE_FENCE_CHUNKER_VERSION}, text_projection_revision = knowledge_revision, updated_at = $1::timestamptz`, [new Date(NOW_MS).toISOString()]);
 }
 
 async function seed(engine: PGLiteEngine, includePrivate: boolean): Promise<void> {
@@ -237,6 +255,11 @@ async function seed(engine: PGLiteEngine, includePrivate: boolean): Promise<void
     const slug = sourceId === 'restricted' ? RESTRICTED_SLUG : 'notes/c72-founders-memo';
     const person = `people/c72-${sourceId}-person`;
     await engine.putPage(slug, { type: 'note', title: `${marker} title`, compiled_truth: `${marker} body ${marker.toLowerCase()}-topic`, timeline: `- ${TODAY}: ${marker} timeline`, frontmatter: { marker, raw: marker } }, { sourceId });
+    const origin = await engine.getPage(slug, { sourceId });
+    await engine.transaction(tx => replaceWantedLinks(tx, { pageId: origin!.id, sourceId }, {
+      producers: ['body'], rows: [{ producer: 'body', ref_kind: 'slug', target_source_id: sourceId,
+        target_ref: `people/${marker.toLowerCase()}-wanted`, link_type: 'mentions', context: `${marker} unresolved link` }],
+    }));
     await engine.putPage(person, { type: 'person', title: marker === RESTRICTED ? 'C72 Restricted Person' : `${marker} person`, compiled_truth: `${marker} person truth`, frontmatter: {} }, { sourceId });
     await engine.putPage(`misc/c72-${sourceId}-orphan`, { type: 'note', title: `${marker} orphan`, compiled_truth: `${marker} orphan`, frontmatter: {} }, { sourceId });
     await engine.executeRaw('UPDATE pages SET type = \'\' WHERE slug = $1 AND source_id = $2', [`misc/c72-${sourceId}-orphan`, sourceId]);
@@ -248,7 +271,7 @@ async function seed(engine: PGLiteEngine, includePrivate: boolean): Promise<void
     await engine.logIngest({ source_id: sourceId, source_type: 'test', source_ref: marker, pages_updated: [slug], summary: `${marker} ingest summary` });
     await engine.insertFact({ fact: `${marker} fact`, entity_slug: person, source: `test:${marker}`, visibility: 'world', embedding: null }, { source_id: sourceId });
     await engine.insertFact({ fact: `${marker} visible-person fact`, entity_slug: PERSON, source: `test:${marker}`, visibility: 'world', embedding: null }, { source_id: sourceId });
-    await engine.mergeOntologyFact({ entitySlug: person, dimension: `${marker.toLowerCase()}dim`, value: marker, confidence: 0.9, source: 'test', sourceId } as any);
+    await engine.mergeOntologyFact({ entitySlug: person, dimension: `${marker.toLowerCase()}dim`, value: marker, confidence: 0.9, source: 'test', sourceId, visibility: 'world' } as any);
     await engine.upsertEventProjection({ depthSlug: person, eventSlug: slug, date: TODAY, summary: `${marker} event summary`, sourceId });
     await engine.upsertEventProjection({ depthSlug: person, eventSlug: slug, date: LAST_YEAR, summary: `${marker} anniversary`, sourceId });
     const page = await engine.getPage(slug, { sourceId });
