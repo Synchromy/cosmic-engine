@@ -22,6 +22,7 @@ import { resolveAuthCapabilities } from '../core/harness/capabilities.ts';
 import { resolveWritebackConfig, ambientOptsFrom } from '../core/facts/writeback-config.ts';
 import { hasScope, operationScopesAllowed } from '../core/scope.ts';
 import { summarizeMcpParams, dispatchToolCall, requestLogStatusForResult, requestMetaSessionId, acceptedPendingReceipt, unknownToolEnvelope, errorResult, dispatchRenderContext, type ToolResult } from '../mcp/dispatch.ts';
+import { requestLogParamsWithUsage } from '../core/put-page-usage.ts';
 import { toAgentError } from '../core/agent-output.ts';
 import { STATUS_TOOL_NAME, statusModeOf, statusToolResult } from '../mcp/status-mode.ts';
 import { isCallable, publishGatesFromDisabled } from '../core/ops/callable.ts';
@@ -580,7 +581,7 @@ async function recordMcpToolResult(
       `INSERT INTO mcp_request_log (token_name, agent_name, operation, latency_ms, status, params)
        VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
       [authInfo.clientId, agentName, name, latency, successStatus],
-      [logParamsObj],
+      [requestLogParamsWithUsage(name, logParamsObj, toolResult)],
     );
   } catch { /* best effort */ }
   broadcastEvent({
