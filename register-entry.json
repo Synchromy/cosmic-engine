@@ -1,18 +1,22 @@
 {
-  "id": "put-page-usage",
-  "branch": "upstream/put-page-usage",
-  "what": "put_page (and capture, which delegates to it) returns outcome (created | updated | unchanged), embed_tokens and embed_cost_usd for the indexing the write caused, and serve-http's success insert merges those three into the mcp_request_log row's params; status is unchanged and params was already jsonb, so no migration. embed_tokens is the engine's per-chunk estimate (content_chunks.token_count), priced at the configured embedding model's rate",
+  "id": "reconcile-page-links",
+  "branch": "upstream/reconcile-page-links",
+  "what": "reconcile_page_links, a local-only op: the host runs put_page's link and timeline reconciliation for one page a remote writer wrote, held to that writer's grant (outbound edges only, only to existing pages in a write source it reads, none to a private page remote readers cannot see, the page inside its slug fence, timeline entries on the page only); dry_run counts and writes nothing; link reconciliation is atomic: an addLink/removeLink failure rolls back all edge changes and returns auto_links.error (errors is 0 on success); managed timeline backfill publishes through the coordinator against the originally read page identity and revision",
   "state": "permanent",
   "upstream": {
     "pr": null,
-    "seen": "none",
-    "checked": "2026-10-14",
-    "note": "carried patch, not offered upstream: the request-log usage fields serve Cosmic's usage ledger; reviewed against upstream v0.60.145.0 (0cd46b7da): intent is not covered upstream. The top-level put_page/capture outcome replaces the upstream receipt object with created|updated|unchanged; the full receipt remains at write_request.outcome. Embedding after the reply deadline updates persistence_requests.outcome but does not backfill mcp_request_log.params, so the log is a lower bound for cosmic-hub #1477; the hub can read persistence_requests.outcome for late usage. Usage sums pending chunks' stored token_count, with the upstream tokenizer as a fallback when provider-free publication left it null; embedding never rewrites token_count."
+    "seen": "partly",
+    "checked": "2026-10-15",
+    "note": "Reviewed against upstream v0.60.145.0 (0cd46b7da): remote persistence links effects add plain mentions and remote commits project timeline rows, but no host-only typed reconciliation held to the original writer grant exists. Keep permanent. Managed timeline backfill uses publishManagedPageTimeline with the original page identity, content hash and knowledge revision checked before the coordinator enforces the snapshot revision under the page lock."
   },
-  "since": "2026-10-06",
-  "depends_on": [],
-  "hub_uses": "none called yet: the hub's usage ledger reads mcp_request_log.params outcome/embed_tokens/embed_cost_usd once its engine pin moves (cosmic-hub #1477, decision 1)",
+  "since": "2026-10-13",
+  "depends_on": [
+    "purge-page-in-source"
+  ],
+  "hub_uses": "serve/remote-links.ts (cosmic-hub #610): after a remote put_page or capture, the gateway queues the page and the drain calls reconcile_page_links with the writer's write source, read grant and slug fence; bin/reconcile-remote-links.ts backfills pages written before",
   "tests": [
-    "test/put-page-usage.test.ts"
+    "test/reconcile-page-links.test.ts",
+    "test/operations-trust-boundary.test.ts",
+    "test/operations-coverage-ledger.test.ts"
   ]
 }

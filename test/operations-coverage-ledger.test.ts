@@ -201,6 +201,8 @@ const LEDGER: Record<string, string> = {
   entity_identity_link: 'test/entity-identity.test.ts',
   entity_identity_unlink: 'test/entity-identity.test.ts',
   entity_identity_list: 'test/entity-identity.test.ts',
+  // cosmic-hub #610 (carried patch reconcile-page-links).
+  reconcile_page_links: 'test/reconcile-page-links.test.ts',
 };
 
 /**

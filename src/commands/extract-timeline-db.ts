@@ -290,8 +290,16 @@ async function writePageTimeline(tx: BrainEngine, page: Page, slug: string, sour
  * the caller's batched read of the page and its stored rows.
  */
 async function publishPageTimeline(engine: BrainEngine, authority: MaintenanceAuthority, slug: string, sourceId: string,
-  opts: TimelineDbOptions, read?: { snapshot: PageSnapshot | null; stored: StoredTimelineRows[] }): Promise<number | null | 'skipped' | 'pending'> {
+  opts: TimelineDbOptions, read?: { snapshot: PageSnapshot | null; stored: StoredTimelineRows[] },
+  expectedPage?: Pick<Page, 'id' | 'content_hash' | 'knowledge_revision'>): Promise<number | null | 'skipped' | 'pending'> {
   const snapshot = read ? read.snapshot : await engine.readPageSnapshot(slug, { sourceId });
+  // A host backfill is bound to the page it originally read. The coordinator
+  // then enforces this snapshot's revision again under its publication lock.
+  if (expectedPage && (!snapshot || String(snapshot.page.id) !== String(expectedPage.id)
+    || (snapshot.page.content_hash ?? null) !== (expectedPage.content_hash ?? null)
+    || (snapshot.page.knowledge_revision ?? null) !== (expectedPage.knowledge_revision ?? null))) {
+    throw new OperationError('unavailable', `reconcile_page_links: ${slug} changed while it was being reconciled; run it again.`);
+  }
   if (!snapshot || isQuarantined(snapshot.page.frontmatter) || (opts.typeFilter && snapshot.page.type !== opts.typeFilter)) return null;
   const plan = await plannedTimeline(engine, snapshot.page, slug, sourceId, opts.inferDates === true, read?.stored);
   if (!plan.removed && !plan.entries.length) return 0;
@@ -317,11 +325,12 @@ async function publishPageTimeline(engine: BrainEngine, authority: MaintenanceAu
  * sweep's path): rows added, 0 when nothing changes, or 'unsettled' when the
  * page changed mid-run or its request is still pending (retry next time).
  */
-export async function publishManagedPageTimeline(engine: BrainEngine, slug: string, sourceId: string): Promise<number | 'unsettled'> {
+export async function publishManagedPageTimeline(engine: BrainEngine, slug: string, sourceId: string,
+  expectedPage?: Pick<Page, 'id' | 'content_hash' | 'knowledge_revision'>): Promise<number | 'unsettled'> {
   const authority = await maintenancePreflight(engine, sourceId);
   if (!authority) throw opError('writer_coordinator_required', 'This brain is not managed; write the timeline batch directly.',
     `Source ${sourceId} has no managed writer, so there is no coordinator to publish through.`);
-  const outcome = await publishPageTimeline(engine, authority, slug, sourceId, { dryRun: false, jsonMode: false });
+  const outcome = await publishPageTimeline(engine, authority, slug, sourceId, { dryRun: false, jsonMode: false }, undefined, expectedPage);
   return outcome === 'skipped' || outcome === 'pending' ? 'unsettled' : outcome ?? 0;
 }
 
