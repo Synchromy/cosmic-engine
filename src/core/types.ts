@@ -196,6 +196,9 @@ export type EffectiveDateSource =
   | 'date'
   | 'published'
   | 'filename'
+  /** A YYYY-MM-DD in one of the slug's directory segments (`atoms/2026-06-25/<slug>`). */
+  | 'path'
+  /** Frontmatter creation keys, the last stated date before falling back to row times. */
   | 'created'
   | 'fallback';
 
