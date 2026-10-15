@@ -35,6 +35,7 @@ import { DEFAULT_WRITE_GATE_CONFIG, type WriteGateConfig } from '../../write-gat
 import { loadImportSanityConfig } from '../../import-screen.ts';
 import { decideTakeWrite, recordFlaggedRow, recordWriteGateHold, type GatedRowDecision } from '../../write-gate-store.ts';
 import type { TaintInput, WriteTrust } from '../../trust/tier.ts';
+import { NO_DERIVE_SOURCE_IDS } from '../../restricted-no-derive.ts';
 
 export interface ConsolidatePhaseOpts {
   dryRun?: boolean;
@@ -105,6 +106,7 @@ export async function runPhaseConsolidate(
 
   // Pull every (source_id, entity_slug) bucket of unconsolidated facts.
   // Uses the partial idx_facts_unconsolidated index.
+  // Cosmic restricted-no-derive: brain-wide scans leave member-hidden sources out.
   let buckets: Array<{ source_id: string; entity_slug: string; count: number }>;
   try {
     buckets = await engine.executeRaw<{
@@ -119,9 +121,10 @@ export async function runPhaseConsolidate(
         AND (attributed_to IS NULL OR attributed_to = 'user')
         AND ($2::boolean=false OR visibility='world')
         AND ($1::text IS NULL OR source_id=$1)
+        AND source_id <> ALL($4::text[])
       GROUP BY source_id, entity_slug
       HAVING COUNT(*) >= $3
-    `, [opts.sourceId ?? null, managed, minPerBucket]);
+    `, [opts.sourceId ?? null, managed, minPerBucket, [...NO_DERIVE_SOURCE_IDS]]);
   } catch (err) {
     return {
       phase: 'consolidate',

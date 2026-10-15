@@ -50,6 +50,7 @@ import {
 } from '../budget/budget-tracker.ts';
 import { withBudgetTracker } from '../ai/gateway.ts';
 import { listSources } from '../sources-ops.ts';
+import { derivesFrom } from '../restricted-no-derive.ts';
 import {
   runExtractConversationFactsCore,
   isAbortError,
@@ -200,7 +201,7 @@ export async function runPhaseConversationFactsBackfill(
   const maxTotalWalltimeMs = cfg.maxTotalWalltimeMin * 60_000;
   const maxWalltimeMs = cfg.maxWalltimeMin * 60_000;
 
-  const sources = await listSources(engine);
+  const sources = (await listSources(engine)).filter((s) => derivesFrom(s.id));
   if (sources.length === 0) {
     return {
       phase: 'conversation_facts_backfill',
