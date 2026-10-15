@@ -4,6 +4,7 @@
  * its discovery patches, the owner login-link handoff and owner consent.
  */
 import express, { type Express, type NextFunction, type Request, type Response, type RequestHandler } from 'express';
+import { brandResourceName } from '../cosmic/brand.ts';
 import cors from 'cors';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
@@ -169,7 +170,7 @@ export function mountOAuth(app: Express, ctx: ServeHttpContext): void {
     provider: oauthProvider,
     issuerUrl,
     scopesSupported: scopesSupportedForDiscovery({ enableDcr }),
-    resourceName: 'GBrain MCP Server',
+    resourceName: brandResourceName('GBrain MCP Server'),
     // Advertise /mcp as the protected resource (see mcpResourceUrl above).
     resourceServerUrl: mcpResourceUrl,
   };

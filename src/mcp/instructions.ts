@@ -19,7 +19,7 @@ import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { InitializeRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { GBrainConfig } from '../core/config.ts';
 import type { ReadinessEntry } from '../core/readiness.ts';
-import { brandText } from '../cosmic/brand.ts';
+import { brandText, brandName } from '../cosmic/brand.ts';
 import { buildAmbientWritebackSection } from '../core/facts/writeback-instructions.ts';
 import type { AmbientWritebackOpts } from '../core/facts/writeback-instructions.ts';
 
@@ -78,7 +78,7 @@ function contractClauses(c: CallablePredicate, writeback?: AmbientWritebackOpts 
   }
   out.push('Preserve the caller\'s brain and source scope. Do not broaden access, invent missing content, or write outside the requested task.');
   if (c('forget')) out.push('`forget` withdraws active memory; it does not promise erasure of source material, history, or backups.');
-  out.push(`When you need this connection's effective permissions or setup readiness, read gbrain://capabilities${c('whoami') ? ' (or `whoami`)' : ''}. A full tool surface does not imply administrative or delegation authority. Missing capabilities require an explicit host grant.`);
+  out.push(brandName() && c('whoami') ? "Read whoami to understand this connection's effective permissions or setup readiness. A full tool surface does not imply administrative or delegation authority. Missing capabilities require an explicit host grant." : `When you need this connection's effective permissions or setup readiness, read gbrain://capabilities${c('whoami') ? ' (or `whoami`)' : ''}. A full tool surface does not imply administrative or delegation authority. Missing capabilities require an explicit host grant.`);
   out.push('MCP admin scope does not authorize the owner dashboard or client management. For an admin login link, client registration, setup instructions, permission edits, token invalidation, revocation, or deletion, use the mcp-access skill when available, or https://github.com/garrytan/gbrain/blob/master/docs/mcp/ADMIN.md directly. Ask the server-hosting harness or a separately authorized administrator to use gbrain mcp admin with the configured server URL and its protected owner credential. Native OAuth clients initiate their own PKCE connection; preserve oauth_request when requesting a login link, and never fetch a generated single-use login link before delivering it to the owner.');
   if (c('join_brain') && c('sync_brain_skills')) {
     out.push('If this installation has an owner-approved shared-skills follow policy and join_brain permission, enroll once, retain the returned installation identity and epoch, and use sync_brain_skills before choosing a shared skill. Follow authorized updates in the parent as well as child harnesses; do not reuse an old local copy silently. A fetched or installed file is not proof of native activation. Report required native enablement or restart steps and never claim an advisory router enforces freshness.');

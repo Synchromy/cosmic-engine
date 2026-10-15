@@ -8,7 +8,7 @@
 
 import type { WriteInference } from './write-inference.ts';
 import type { BrainEngine } from '../engine.ts';
-import { brandText } from '../../cosmic/brand.ts';
+import { brandText, isCredential } from '../../cosmic/brand.ts';
 import type { GBrainConfig } from '../config.ts';
 import { MEMORY_VERBS_VERSION } from '../verbs.ts';
 import { publicWriteReceipt, type WriteErrorCode, type WriteReceipt } from '../persistence/types.ts';
@@ -405,7 +405,7 @@ export interface AuthInfo {
  */
 export function authTransport(auth: AuthInfo): 'oauth' | 'legacy' {
   if (auth.principal) return auth.principal.kind === 'oauth_client' ? 'oauth' : 'legacy';
-  return auth.clientId.startsWith('gbrain_cl_') ? 'oauth' : 'legacy';
+  return isCredential(auth.clientId, 'gbrain_cl_') ? 'oauth' : 'legacy';
 }
 
 export interface OperationContext {
