@@ -20,11 +20,15 @@ import {
 
 // --- v0.43 (#2095): push-based context — the brain volunteers pages ---
 
+/** The most turns volunteer_context reads from `window`; older turns are dropped. */
+export const VOLUNTEER_MAX_WINDOW_TURNS = 8;
+
 const volunteer_context: Operation = {
   name: 'volunteer_context',
   description:
-    'Push-based context: volunteer brain pages relevant to a rolling conversation window ' +
-    'WITHOUT being asked. Zero-LLM, confidence-gated (alias 0.9 / exact-title 0.8 / ' +
+    'Suggest brain pages that match the people, projects and topics named in the last few ' +
+    `conversation turns (at most ${VOLUNTEER_MAX_WINDOW_TURNS}; older turns are ignored). ` +
+    'Zero-LLM, confidence-gated (alias 0.9 / exact-title 0.8 / ' +
     'slug-suffix 0.6, +0.05 for multi-turn or newest-turn mentions; default gate 0.7), ' +
     'capped at 3 pages (max 5). Returns pointers with one-line rationales + synopses — ' +
     'open the page (get_page) before relying on details. Pass stats: true for the ' +
@@ -34,7 +38,8 @@ const volunteer_context: Operation = {
     window: {
       type: 'string',
       description:
-        "Recent conversation turns, oldest → newest, as 'user:' / 'assistant:' prefixed " +
+        `The last few conversation turns (at most ${VOLUNTEER_MAX_WINDOW_TURNS}; only the newest ` +
+        `${VOLUNTEER_MAX_WINDOW_TURNS} are read), oldest → newest, as 'user:' / 'assistant:' prefixed ` +
         'lines (unprefixed text = one user turn). Required unless stats: true. ' +
         'CLI: piped stdin fills this.',
     },
@@ -76,7 +81,9 @@ const volunteer_context: Operation = {
         'Pass the recent turns as a string (CLI: pipe them on stdin), or use --stats.',
       );
     }
-    const turns = parseWindow(p.window);
+    // Only the newest turns are read: the op is a short rolling window, never
+    // a whole conversation, and the description says so.
+    const turns = parseWindow(p.window).slice(-VOLUNTEER_MAX_WINDOW_TURNS);
     const { loadConfig: loadCfgForArms } = await import('../config.ts');
     const { lexicalArmsEnabled } = await import('../context/reflex.ts');
     const pages = await volunteerContext(ctx.engine, turns, {

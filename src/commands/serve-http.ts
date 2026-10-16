@@ -62,7 +62,7 @@ import {
   clampSurface,
   minSurface,
   resolveClientRowSurface,
-  resolveDefaultClientSurface,
+  resolveDefaultClientSurface, isSurfacePinned, withoutPinnedMetaOps,
   type McpSurface,
 } from '../mcp/surface.ts';
 import { writeSurfaceChangeAudit } from '../core/surface-audit.ts';
@@ -2273,11 +2273,11 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOption
       resolveEffectiveSurface(authInfo),
       canWrite ? resolveWritebackConfig(engine, config) : Promise.resolve(null),
     ]);
-    const mcpOperations = filterOpsForSurface(mcpOperationsBase, surface)
+    const mcpOperations = withoutPinnedMetaOps(filterOpsForSurface(mcpOperationsBase, surface), authInfo.surfaceSetBy)
       .filter(op => authInfo.allowedOperations == null || authInfo.allowedOperations.includes(op.name));
     authInfo.effectiveSurface = surface;
     const surfaceAllowedOps: ReadonlySet<string> | undefined =
-      surface === 'full' && authInfo.allowedOperations == null ? undefined : new Set(mcpOperations.map(o => o.name));
+      surface === 'full' && authInfo.allowedOperations == null && !isSurfacePinned(authInfo.surfaceSetBy) ? undefined : new Set(mcpOperations.map(o => o.name));
 
     // Create a fresh MCP server per request (stateless).
     let writebackOpts: ReturnType<typeof ambientOptsFrom> = null;
