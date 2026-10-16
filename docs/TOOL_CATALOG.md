@@ -84,7 +84,7 @@ Every non-localOnly operation on the MCP surface: 122 tools across 23 areas. **S
 | `find_trajectory` | v0.35.4 — return the chronological claim trajectory for an entity (typed metric values over time, plus auto-detected regressions and narrative drift). | read |  |  |
 | `get_calibration_profile` | Read the active calibration profile for a holder. | read |  |  |
 | `get_recent_salience` | Returns readable pages recently touched and ranked by activity salience and recency. | read | yes |  |
-| `volunteer_context` | Push-based context: volunteer brain pages relevant to a rolling conversation window WITHOUT being asked. | read |  |  |
+| `volunteer_context` | Suggest brain pages that match the people, projects and topics named in the last few conversation turns (at most 8; older turns are ignored). | read |  |  |
 
 ## jobs
 

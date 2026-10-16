@@ -159,8 +159,8 @@ export const CODE_CALLEES_DESCRIPTION =
 
 export const CODE_DEF_DESCRIPTION =
   "Where is this symbol defined? Returns one row per definition site (function, " +
-  "class, type, interface, enum, struct, trait, module, contract). Use this BEFORE " +
-  "reaching for grep when you want to read a definition. Single-result is the common " +
+  "class, type, interface, enum, struct, trait, module, contract) from the indexed " +
+  "code. Single-result is the common " +
   "case; multiple results indicate same-name symbols across files (which is information " +
   "in itself). " +
   "Returns: `{symbol, count, defs: [{slug, file, language, symbol_type, start_line, end_line, snippet}]}`. " +

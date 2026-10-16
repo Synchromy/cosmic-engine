@@ -150,6 +150,23 @@ export function filterOpsForSurface(ops: Operation[], surface: McpSurface): Oper
   return ops.filter(op => STARTER_OPS.has(op.name));
 }
 
+/** True when an operator pinned this client's surface (rescope --surface). */
+export function isSurfacePinned(surfaceSetBy: string | undefined): boolean {
+  return surfaceSetBy === 'operator';
+}
+
+/**
+ * Drops request_tools for an operator-pinned client. Such a client cannot
+ * persist a surface, and every op the catalog could name beyond its list is
+ * uncallable for it, so the op would only describe tools it cannot use. The
+ * result feeds both tools/list and the dispatch allow-set, so the op is
+ * neither listed nor callable.
+ */
+export function withoutPinnedMetaOps(ops: Operation[], surfaceSetBy: string | undefined): Operation[] {
+  if (!isSurfacePinned(surfaceSetBy)) return ops;
+  return ops.filter(op => op.name !== 'request_tools');
+}
+
 /** The fail-closed allow-set handed to dispatchToolCall. */
 export function allowedOpNames(ops: Operation[], surface: McpSurface): ReadonlySet<string> {
   return new Set(filterOpsForSurface(ops, surface).map(o => o.name));
