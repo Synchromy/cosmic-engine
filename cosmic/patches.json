@@ -391,6 +391,24 @@
       ]
     },
     {
+      "id": "openai-directory-tools",
+      "branch": "upstream/openai-directory-tools",
+      "what": "what OpenAI's directory scan flagged: request_tools is neither listed nor callable for a client whose surface an operator pinned; volunteer_context reads at most the newest 8 turns and says so; code_def's description no longer tells the model to use it before grep",
+      "state": "permanent",
+      "upstream": {
+        "pr": null,
+        "seen": "none",
+        "checked": "2026-10-16",
+        "note": "no upstream PR yet; upstream-bound, offering it needs a decision"
+      },
+      "since": "2026-10-16",
+      "depends_on": [],
+      "hub_uses": "the OpenAI plugin directory review: every Cosmic client is operator-pinned at consent (serve/authorize.ts rescope --surface), so none is offered request_tools",
+      "tests": [
+        "test/openai-directory-tools.test.ts"
+      ]
+    },
+    {
       "id": "cosmic-brand",
       "script": "scripts/cosmic-brand.ts",
       "what": "Cosmic's name on what the engine tells a connected agent and the public: handshake, tool descriptions, hints, server and resource names, new credential prefixes (cosmic_). Inert unless COSMIC_BRAND is set",

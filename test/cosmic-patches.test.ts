@@ -102,6 +102,11 @@ const PROBES: Record<string, () => void> = {
     expect(operationsByName.put_page.annotations?.destructiveHint).toBe(true);
     expect(operationsByName.get_page.annotations?.readOnlyHint).toBe(true);
   },
+  'openai-directory-tools': () => {
+    expect(readFileSync('src/commands/serve-http.ts', 'utf8')).toContain('withoutPinnedMetaOps(filterOpsForSurface(mcpOperationsBase, surface), authInfo.surfaceSetBy)');
+    expect(readFileSync('src/core/ops/insights.ts', 'utf8')).toContain('parseWindow(p.window).slice(-VOLUNTEER_MAX_WINDOW_TURNS)');
+    expect(operationsByName.code_def.description).not.toMatch(/before reaching for grep/i);
+  },
   'cosmic-brand': () => {
     // Every anchor applied; test/cosmic-brand.test.ts is the leak test proper.
     const r = brandCheck('.', true);
